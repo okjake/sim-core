@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Committed dist is complete
+        # dist/ is committed so `github:` installs need no build step.
+        run: |
+          for f in dist/index.js dist/index.d.ts dist/public/index.html; do
+            test -f "$f" || { echo "::error::missing $f — run 'pnpm build' and commit dist/"; exit 1; }
+          done
+
+      - name: Build (library + admin SPA)
+        run: pnpm run build
+
+      - name: Warn if committed dist drifted
+        # Advisory only: bundler output is not guaranteed byte-identical across
+        # platforms, so a diff here is a prompt to look, not an automatic failure.
+        continue-on-error: true
+        run: |
+          if ! git diff --quiet -- dist; then
+            echo "::warning::dist/ differs from a fresh build. Run 'pnpm build' and commit the result."
+            git diff --stat -- dist
+          fi
+
+      - name: Test
+        run: pnpm run test

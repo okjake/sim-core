@@ -1,0 +1,15 @@
+node_modules/
+coverage/
+*.log
+.DS_Store
+
+# Secrets — only .env.example is ever committed.
+.env
+.env.*
+!.env.example
+
+# NOTE: dist/ is deliberately NOT ignored. sim-core is consumed as a
+# `github:okjake/sim-core#v0.1.0` dependency, and pnpm does not build git
+# dependencies that have no `prepare` script — so the build output (library
+# JS + d.ts, and the admin SPA in dist/public) is committed on purpose.
+# Run `pnpm build` and commit dist/ with any source change.
