@@ -1,7 +1,7 @@
 {
-  "name": "sim-core",
-  "version": "0.1.0",
-  "description": "Shared NestJS engine for the synthetic partner-ecosystem sim fleet: chaos layer, scenario registry, seeded traffic driver, __control API and admin SPA.",
+  "name": "@okjake/sim-core",
+  "version": "0.2.0",
+  "description": "Shared NestJS engine for the synthetic partner-ecosystem sim fleet: chaos layer, scenario registry, seeded traffic driver, SQLite-backed docs engine, webhook verification, __control API and admin SPA.",
   "license": "UNLICENSED",
   "private": false,
   "repository": {
@@ -38,7 +38,8 @@
     "verify": "pnpm run lint && pnpm run typecheck && pnpm run test"
   },
   "dependencies": {
-    "@nestjs/serve-static": "^5.0.5"
+    "@nestjs/serve-static": "^5.0.5",
+    "better-sqlite3": "^13.0.2"
   },
   "peerDependencies": {
     "@nestjs/common": "^11.0.0",
@@ -53,6 +54,7 @@
     "@nestjs/core": "^11.1.28",
     "@nestjs/platform-express": "^11.1.28",
     "@nestjs/testing": "^11.1.28",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/express": "^5.0.6",
     "@types/jest": "^30.0.0",
     "@types/node": "^25.9.5",

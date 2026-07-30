@@ -2,12 +2,15 @@ import {
   CallHandler,
   ExecutionContext,
   HttpException,
+  Inject,
   Injectable,
   NestInterceptor,
+  Optional,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { Observable, from, switchMap } from 'rxjs';
 
+import { SIM_CORE_CONFIG, type SimCoreConfig } from '../config';
 import { ChaosService } from './chaos.service';
 import type { MalformedResponsePrimitive } from './chaos.types';
 
@@ -15,12 +18,37 @@ import type { MalformedResponsePrimitive } from './chaos.types';
  * Paths chaos never touches. `/__control` in particular must stay reachable —
  * an outage scenario that also broke its own kill switch would be unrecoverable.
  */
-export const CHAOS_EXEMPT_PREFIXES = ['/__control', '/health', '/admin', '/openapi.json'];
+export const CHAOS_EXEMPT_PREFIXES = [
+  '/__control',
+  '/__admin',
+  '/health',
+  '/admin',
+  '/openapi.json',
+  '/docs',
+];
 
-export function isChaosExempt(path: string): boolean {
-  return CHAOS_EXEMPT_PREFIXES.some(
-    (prefix) => path === prefix || path.startsWith(`${prefix}/`),
-  );
+/**
+ * The documentation surface. Exempt by default, because a sim whose spec
+ * endpoint 503s during an unrelated outage scenario looks to the platform like
+ * an upstream that deleted its API. A consumer that specifically wants to
+ * exercise docs-fetch failures opts in with `docsChaosOptIn: true`.
+ */
+export const DOCS_CHAOS_PREFIXES = ['/openapi.json', '/docs'];
+
+export interface ChaosExemptionOptions {
+  /** When true, `/docs` and `/openapi.json` become chaos-eligible. */
+  docsChaosOptIn?: boolean;
+}
+
+function matches(path: string, prefix: string): boolean {
+  return path === prefix || path.startsWith(`${prefix}/`);
+}
+
+export function isChaosExempt(path: string, options: ChaosExemptionOptions = {}): boolean {
+  const exempt = options.docsChaosOptIn
+    ? CHAOS_EXEMPT_PREFIXES.filter((prefix) => !DOCS_CHAOS_PREFIXES.includes(prefix))
+    : CHAOS_EXEMPT_PREFIXES;
+  return exempt.some((prefix) => matches(path, prefix));
 }
 
 const sleep = (ms: number): Promise<void> =>
@@ -30,7 +58,14 @@ const sleep = (ms: number): Promise<void> =>
 
 @Injectable()
 export class ChaosInterceptor implements NestInterceptor {
-  constructor(private readonly chaos: ChaosService) {}
+  private readonly docsChaosOptIn: boolean;
+
+  constructor(
+    private readonly chaos: ChaosService,
+    @Optional() @Inject(SIM_CORE_CONFIG) config?: SimCoreConfig,
+  ) {
+    this.docsChaosOptIn = config?.docsChaosOptIn === true;
+  }
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     if (context.getType() !== 'http') {
@@ -42,7 +77,7 @@ export class ChaosInterceptor implements NestInterceptor {
     const res = http.getResponse<Response>();
     const path = req.path || (req.url ?? '').split('?')[0] || '/';
 
-    if (isChaosExempt(path)) {
+    if (isChaosExempt(path, { docsChaosOptIn: this.docsChaosOptIn })) {
       return next.handle();
     }
 

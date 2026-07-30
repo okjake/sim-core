@@ -276,3 +276,161 @@ td.num {
 .gate p {
   color: var(--muted);
 }
+
+/* --- tabs ---------------------------------------------------------------- */
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tabs.sub {
+  margin: 14px 0 16px;
+}
+
+button.tab {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 8px 14px;
+  color: var(--muted);
+  margin-bottom: -1px;
+}
+
+button.tab.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+/* --- docs editor --------------------------------------------------------- */
+
+.row.tight {
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.row.between {
+  justify-content: space-between;
+  align-items: center;
+}
+
+.row > .field.grow {
+  flex: 3 1 200px;
+}
+
+a.as-button {
+  display: inline-block;
+  text-decoration: none;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 10px;
+  color: var(--text);
+}
+
+.docs-split {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 720px) {
+  .docs-split {
+    grid-template-columns: 1fr;
+  }
+}
+
+ul.index {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+
+ul.index li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+}
+
+ul.index li.sel {
+  color: var(--accent);
+}
+
+button.link {
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  color: inherit;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pill.muted-pill {
+  color: var(--muted);
+  border-color: var(--border);
+}
+
+textarea.code {
+  width: 100%;
+  margin-top: 10px;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  padding: 10px 12px;
+  resize: vertical;
+}
+
+textarea.code:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.field input[type='checkbox'] {
+  width: auto;
+}
+
+.preview {
+  margin-top: 16px;
+  padding: 12px 16px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+}
+
+.preview h3 {
+  margin: 0 0 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.preview pre {
+  background: var(--bg);
+  padding: 10px 12px;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+
+.preview table {
+  margin: 10px 0;
+}
+
+.preview td,
+.preview th {
+  white-space: normal;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+}

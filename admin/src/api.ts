@@ -3,6 +3,8 @@ export interface Brand {
   version: string;
   brand: { displayName: string; color: string; tagline?: string };
   driver: boolean;
+  /** Docs engine enabled? Drives whether the Docs tab is offered at all. */
+  docs?: boolean;
 }
 
 export interface ScenarioListing {
@@ -70,6 +72,58 @@ export interface RequestTailEntry {
   chaos?: string[];
 }
 
+// --- docs engine ------------------------------------------------------------
+
+export interface SpecVersionSummary {
+  id: string;
+  label: string;
+  createdAt: string;
+  publishedAt: string | null;
+  active: boolean;
+}
+
+export interface SpecVersion extends SpecVersionSummary {
+  spec: Record<string, unknown>;
+}
+
+export interface Guide {
+  slug: string;
+  title: string;
+  markdown: string;
+  published: boolean;
+  order: number;
+  updatedAt: string;
+}
+
+export interface ChangelogEntry {
+  id: string;
+  date: string;
+  title: string;
+  markdown: string;
+  published: boolean;
+  updatedAt: string;
+}
+
+export interface DocsStatus {
+  enabled: true;
+  authMode: 'public' | 'required';
+  databaseFile: string;
+  contentDir: string;
+  chaosOptIn: boolean;
+  counts: { specVersions: number; guides: number; changelog: number };
+  activeSpec: SpecVersionSummary | null;
+  migrations: string[];
+}
+
+export interface SeedResult {
+  specVersions: number;
+  guides: number;
+  changelog: number;
+  activeSpec: string | null;
+  contentDir: string;
+  found: boolean;
+}
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -86,7 +140,7 @@ async function call<T>(
   path: string,
   init: { method?: string; body?: unknown } = {},
 ): Promise<T> {
-  const res = await fetch(`${CONTROL_BASE}${path}`, {
+  const res: Response = await fetch(`${CONTROL_BASE}${path}`, {
     method: init.method ?? 'GET',
     headers: {
       authorization: `Bearer ${token}`,
@@ -135,4 +189,64 @@ export const api = {
   driver: (token: string, body: { mode: string; multiplier?: number; ttlSeconds: number }) =>
     call<ControlState>(token, '/driver', { method: 'POST', body }),
   reset: (token: string) => call<ControlState>(token, '/reset', { method: 'POST' }),
+
+  docs: {
+    status: (token: string) => call<DocsStatus>(token, '/docs'),
+    resetDocs: (token: string) => call<SeedResult>(token, '/reset-docs', { method: 'POST' }),
+    preview: (token: string, markdown: string) =>
+      call<{ html: string }>(token, '/docs/preview', { method: 'POST', body: { markdown } }),
+
+    specVersions: (token: string) =>
+      call<{ specVersions: SpecVersionSummary[] }>(token, '/docs/spec-versions').then(
+        (r) => r.specVersions,
+      ),
+    specVersion: (token: string, id: string) =>
+      call<SpecVersion>(token, `/docs/spec-versions/${encodeURIComponent(id)}`),
+    createSpecVersion: (
+      token: string,
+      body: { label: string; spec?: string; fromActive?: boolean },
+    ) => call<SpecVersion>(token, '/docs/spec-versions', { method: 'POST', body }),
+    updateSpecVersion: (token: string, id: string, body: { label?: string; spec?: string }) =>
+      call<SpecVersion>(token, `/docs/spec-versions/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body,
+      }),
+    publishSpecVersion: (token: string, id: string) =>
+      call<SpecVersion>(token, `/docs/spec-versions/${encodeURIComponent(id)}/publish`, {
+        method: 'POST',
+      }),
+    deleteSpecVersion: (token: string, id: string) =>
+      call<{ deleted: string }>(token, `/docs/spec-versions/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      }),
+
+    guides: (token: string) =>
+      call<{ guides: Guide[] }>(token, '/docs/guides').then((r) => r.guides),
+    saveGuide: (
+      token: string,
+      slug: string,
+      body: { title: string; markdown: string; published: boolean; order?: number },
+    ) =>
+      call<Guide>(token, `/docs/guides/${encodeURIComponent(slug)}`, { method: 'PUT', body }),
+    deleteGuide: (token: string, slug: string) =>
+      call<{ deleted: string }>(token, `/docs/guides/${encodeURIComponent(slug)}`, {
+        method: 'DELETE',
+      }),
+
+    changelog: (token: string) =>
+      call<{ changelog: ChangelogEntry[] }>(token, '/docs/changelog').then((r) => r.changelog),
+    saveChangelogEntry: (
+      token: string,
+      id: string,
+      body: { date: string; title: string; markdown: string; published: boolean },
+    ) =>
+      call<ChangelogEntry>(token, `/docs/changelog/${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        body,
+      }),
+    deleteChangelogEntry: (token: string, id: string) =>
+      call<{ deleted: string }>(token, `/docs/changelog/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      }),
+  },
 };

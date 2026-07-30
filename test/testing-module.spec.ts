@@ -4,7 +4,7 @@ import request from 'supertest';
 import { AppModule } from '../examples/demo/app.module';
 import { createDemoConfig } from '../examples/demo/demo.config';
 import { ChaosService, ControlService, DriverService } from '../src';
-import { bearer } from './helpers';
+import { bearer, listenOnEphemeralPort } from './helpers';
 
 /**
  * Consumers will unit-test their own modules with `@nestjs/testing`, so prove
@@ -25,6 +25,7 @@ describe('SimCoreModule under @nestjs/testing', () => {
 
     const app = moduleRef.createNestApplication({ logger: false });
     await app.init();
+    await listenOnEphemeralPort(app);
 
     try {
       expect(moduleRef.get(ChaosService)).toBeInstanceOf(ChaosService);
@@ -58,6 +59,7 @@ describe('SimCoreModule under @nestjs/testing', () => {
 
     const app = moduleRef.createNestApplication({ logger: false });
     await app.init();
+    await listenOnEphemeralPort(app);
 
     try {
       stubChaos.apply({ reject: { status: 418 } });

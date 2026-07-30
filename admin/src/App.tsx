@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactElement } from 'react';
 
+import DocsPanel from './DocsPanel';
 import {
   ApiError,
   api,
@@ -12,6 +13,8 @@ import {
 
 const TOKEN_KEY = 'sim-core.control-token';
 const POLL_MS = 5_000;
+
+type Tab = 'control' | 'docs';
 
 function useBrand(): Brand | null {
   const [brand, setBrand] = useState<Brand | null>(null);
@@ -385,6 +388,8 @@ export default function App(): ReactElement {
   const [scenarios, setScenarios] = useState<ScenarioListing[]>([]);
   const [tail, setTail] = useState<RequestTailEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>('control');
+  const docsEnabled = brand?.docs === true;
 
   useEffect(() => {
     if (brand) {
@@ -467,12 +472,37 @@ export default function App(): ReactElement {
       {!token ? <TokenGate onSubmit={saveToken} /> : null}
       {error ? <p className="error">{error}</p> : null}
 
-      {token && state ? (
+      {token && docsEnabled ? (
+        <div className="tabs">
+          <button
+            type="button"
+            className={tab === 'control' ? 'tab active' : 'tab'}
+            onClick={() => setTab('control')}
+          >
+            Control
+          </button>
+          <button
+            type="button"
+            className={tab === 'docs' ? 'tab active' : 'tab'}
+            onClick={() => setTab('docs')}
+          >
+            Docs
+          </button>
+        </div>
+      ) : null}
+
+      {token && state && (tab === 'control' || !docsEnabled) ? (
         <div className="grid">
           <StatePanel state={state} />
           <ScenarioPanel token={token} scenarios={scenarios} onChanged={() => void refresh()} />
           <DriverPanel token={token} state={state} onChanged={() => void refresh()} />
           <TailPanel entries={tail} />
+        </div>
+      ) : null}
+
+      {token && docsEnabled && tab === 'docs' ? (
+        <div className="grid">
+          <DocsPanel token={token} />
         </div>
       ) : null}
     </div>

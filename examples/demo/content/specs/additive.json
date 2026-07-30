@@ -1,0 +1,22 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Demo Widgets API",
+    "version": "1.1.0",
+    "description": "Adds an optional field and a new endpoint. Non-breaking."
+  },
+  "paths": {
+    "/widgets": {
+      "get": { "summary": "List widgets", "responses": { "200": { "description": "ok" } } }
+    },
+    "/widgets/{id}": {
+      "get": { "summary": "Get a widget", "responses": { "200": { "description": "ok" } } }
+    },
+    "/widgets/orders": {
+      "post": { "summary": "Create an order", "responses": { "201": { "description": "created" } } }
+    },
+    "/widgets/orders/{id}": {
+      "get": { "summary": "Get an order", "responses": { "200": { "description": "ok" } } }
+    }
+  }
+}

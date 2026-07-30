@@ -2,6 +2,7 @@ import { Module, type DynamicModule } from '@nestjs/common';
 
 import { SimCoreModule, type SimCoreConfig } from '../../src';
 import { createDemoConfig, type DemoConfigOverrides } from './demo.config';
+import { WebhooksController } from './webhooks.controller';
 import { WidgetsController } from './widgets.controller';
 
 /**
@@ -14,7 +15,7 @@ export class AppModule {
     return {
       module: AppModule,
       imports: [SimCoreModule.forRoot(config)],
-      controllers: [WidgetsController],
+      controllers: [WidgetsController, WebhooksController],
     };
   }
 

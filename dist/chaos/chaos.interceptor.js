@@ -8,27 +8,53 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var __param = (this && this.__param) || function (paramIndex, decorator) {
+    return function (target, key) { decorator(target, key, paramIndex); }
+};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ChaosInterceptor = exports.CHAOS_EXEMPT_PREFIXES = void 0;
+exports.ChaosInterceptor = exports.DOCS_CHAOS_PREFIXES = exports.CHAOS_EXEMPT_PREFIXES = void 0;
 exports.isChaosExempt = isChaosExempt;
 const common_1 = require("@nestjs/common");
 const rxjs_1 = require("rxjs");
+const config_1 = require("../config");
 const chaos_service_1 = require("./chaos.service");
 /**
  * Paths chaos never touches. `/__control` in particular must stay reachable —
  * an outage scenario that also broke its own kill switch would be unrecoverable.
  */
-exports.CHAOS_EXEMPT_PREFIXES = ['/__control', '/health', '/admin', '/openapi.json'];
-function isChaosExempt(path) {
-    return exports.CHAOS_EXEMPT_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
+exports.CHAOS_EXEMPT_PREFIXES = [
+    '/__control',
+    '/__admin',
+    '/health',
+    '/admin',
+    '/openapi.json',
+    '/docs',
+];
+/**
+ * The documentation surface. Exempt by default, because a sim whose spec
+ * endpoint 503s during an unrelated outage scenario looks to the platform like
+ * an upstream that deleted its API. A consumer that specifically wants to
+ * exercise docs-fetch failures opts in with `docsChaosOptIn: true`.
+ */
+exports.DOCS_CHAOS_PREFIXES = ['/openapi.json', '/docs'];
+function matches(path, prefix) {
+    return path === prefix || path.startsWith(`${prefix}/`);
+}
+function isChaosExempt(path, options = {}) {
+    const exempt = options.docsChaosOptIn
+        ? exports.CHAOS_EXEMPT_PREFIXES.filter((prefix) => !exports.DOCS_CHAOS_PREFIXES.includes(prefix))
+        : exports.CHAOS_EXEMPT_PREFIXES;
+    return exempt.some((prefix) => matches(path, prefix));
 }
 const sleep = (ms) => new Promise((resolve) => {
     setTimeout(resolve, ms);
 });
 let ChaosInterceptor = class ChaosInterceptor {
     chaos;
-    constructor(chaos) {
+    docsChaosOptIn;
+    constructor(chaos, config) {
         this.chaos = chaos;
+        this.docsChaosOptIn = config?.docsChaosOptIn === true;
     }
     intercept(context, next) {
         if (context.getType() !== 'http') {
@@ -38,7 +64,7 @@ let ChaosInterceptor = class ChaosInterceptor {
         const req = http.getRequest();
         const res = http.getResponse();
         const path = req.path || (req.url ?? '').split('?')[0] || '/';
-        if (isChaosExempt(path)) {
+        if (isChaosExempt(path, { docsChaosOptIn: this.docsChaosOptIn })) {
             return next.handle();
         }
         const effective = this.chaos.resolve(path);
@@ -141,5 +167,7 @@ let ChaosInterceptor = class ChaosInterceptor {
 exports.ChaosInterceptor = ChaosInterceptor;
 exports.ChaosInterceptor = ChaosInterceptor = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [chaos_service_1.ChaosService])
+    __param(1, (0, common_1.Optional)()),
+    __param(1, (0, common_1.Inject)(config_1.SIM_CORE_CONFIG)),
+    __metadata("design:paramtypes", [chaos_service_1.ChaosService, Object])
 ], ChaosInterceptor);

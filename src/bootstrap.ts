@@ -22,6 +22,16 @@ export interface BootstrapSimServiceOptions {
   listen?: boolean;
   /** Passed straight to `NestFactory.create` — `false` silences Nest logging. */
   logger?: NestApplicationOptions['logger'];
+  /**
+   * Capture the raw request body on `req.rawBody`.
+   *
+   * **Required by any service that receives platform webhooks.** Signature
+   * verification runs over the exact bytes that were signed, and
+   * `JSON.stringify(req.body)` is not those bytes — key order and whitespace
+   * differ, so every check would fail in a way that looks like a wrong secret.
+   * See `verifyPlatformWebhook` and the receiver recipe in the README.
+   */
+  rawBody?: boolean;
 }
 
 /**
@@ -42,6 +52,7 @@ export async function bootstrapSimService(
 
   const app = await NestFactory.create<NestExpressApplication>(appModule as never, {
     bufferLogs: false,
+    ...(options.rawBody ? { rawBody: true } : {}),
     ...(options.logger !== undefined ? { logger: options.logger } : {}),
   });
 
@@ -62,7 +73,7 @@ export async function bootstrapSimService(
 
   logger.log(
     `${config.brand?.displayName ?? config.name} listening on :${resolvedPort} — ` +
-      `/health /openapi.json /admin /__control/state`,
+      `/health /openapi.json${config.docs?.enabled ? ' /docs' : ''} /admin /__control/state`,
   );
   if (config.driver) {
     logger.log(

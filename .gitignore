@@ -3,6 +3,14 @@ coverage/
 *.log
 .DS_Store
 
+# Docs-engine state. DATA_DIR defaults to ./data; the database and its WAL
+# sidecars are runtime state, never source. Baseline content lives in content/,
+# which IS committed — `POST /__control/reset-docs` rebuilds the database from it.
+data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
 # Secrets — only .env.example is ever committed.
 .env
 .env.*

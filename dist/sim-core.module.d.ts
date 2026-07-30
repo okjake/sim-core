@@ -3,7 +3,8 @@ import { type SimCoreConfig } from './config';
 /**
  * The shared engine. One import wires health, openapi, the chaos layer, the
  * scenario registry, the traffic driver, the `/__control` plane, the request
- * tail and the admin SPA into a consumer's Nest app.
+ * tail, the webhook recorder and the admin SPA into a consumer's Nest app —
+ * plus, when `docs.enabled` is set, the SQLite-backed docs engine.
  *
  * ```ts
  * @Module({ imports: [SimCoreModule.forRoot(config)], controllers: [ListingsController] })

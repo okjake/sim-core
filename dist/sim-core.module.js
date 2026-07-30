@@ -21,14 +21,20 @@ const config_1 = require("./config");
 const control_controller_1 = require("./control/control.controller");
 const control_guard_1 = require("./control/control.guard");
 const control_service_1 = require("./control/control.service");
+const docs_auth_guard_1 = require("./docs/docs-auth.guard");
+const docs_control_controller_1 = require("./docs/docs-control.controller");
+const docs_controller_1 = require("./docs/docs.controller");
+const docs_service_1 = require("./docs/docs.service");
 const driver_service_1 = require("./driver/driver.service");
 const request_tail_middleware_1 = require("./request-tail/request-tail.middleware");
 const request_tail_service_1 = require("./request-tail/request-tail.service");
 const scenario_registry_service_1 = require("./scenarios/scenario-registry.service");
+const webhook_recorder_service_1 = require("./webhooks/webhook-recorder.service");
 /**
  * The shared engine. One import wires health, openapi, the chaos layer, the
  * scenario registry, the traffic driver, the `/__control` plane, the request
- * tail and the admin SPA into a consumer's Nest app.
+ * tail, the webhook recorder and the admin SPA into a consumer's Nest app —
+ * plus, when `docs.enabled` is set, the SQLite-backed docs engine.
  *
  * ```ts
  * @Module({ imports: [SimCoreModule.forRoot(config)], controllers: [ListingsController] })
@@ -53,47 +59,68 @@ let SimCoreModule = SimCoreModule_1 = class SimCoreModule {
                 logger.warn('Admin SPA build not found (dist/public). Run `pnpm build:admin`. /admin will 404.');
             }
         }
+        const controllers = [
+            health_controller_1.HealthController,
+            openapi_controller_1.OpenApiController,
+            admin_brand_controller_1.AdminBrandController,
+            control_controller_1.ControlController,
+        ];
+        const providers = [
+            { provide: config_1.SIM_CORE_CONFIG, useValue: normalized },
+            {
+                provide: chaos_service_1.ChaosService,
+                useFactory: () => new chaos_service_1.ChaosService(normalized.seed),
+            },
+            {
+                provide: driver_service_1.DriverService,
+                useFactory: () => new driver_service_1.DriverService(normalized.driver),
+            },
+            {
+                provide: request_tail_service_1.RequestTailService,
+                useFactory: () => new request_tail_service_1.RequestTailService(normalized.requestTailSize),
+            },
+            {
+                provide: webhook_recorder_service_1.WebhookRecorderService,
+                useFactory: () => new webhook_recorder_service_1.WebhookRecorderService(normalized.webhookHistorySize),
+            },
+            {
+                provide: scenario_registry_service_1.ScenarioRegistryService,
+                useFactory: () => new scenario_registry_service_1.ScenarioRegistryService(normalized.scenarios ?? []),
+            },
+            control_service_1.ControlService,
+            control_guard_1.ControlAuthGuard,
+            request_tail_middleware_1.RequestTailMiddleware,
+            { provide: core_1.APP_INTERCEPTOR, useClass: chaos_interceptor_1.ChaosInterceptor },
+        ];
+        const exports = [
+            config_1.SIM_CORE_CONFIG,
+            chaos_service_1.ChaosService,
+            driver_service_1.DriverService,
+            request_tail_service_1.RequestTailService,
+            webhook_recorder_service_1.WebhookRecorderService,
+            scenario_registry_service_1.ScenarioRegistryService,
+            control_service_1.ControlService,
+        ];
+        // Docs are opt-in. Left off (the default), nothing below is constructed:
+        // no SQLite handle, no data directory, no /docs routes — a v0.1.0 config
+        // repinned to v0.2.0 gets byte-for-byte the same behaviour.
+        if (normalized.docs?.enabled) {
+            controllers.push(docs_controller_1.DocsController, docs_control_controller_1.DocsControlController);
+            providers.push(docs_service_1.DocsService, docs_auth_guard_1.DocsAuthGuard, 
+            // The optional hook OpenApiController uses to serve the ACTIVE
+            // published spec version instead of the static config document.
+            { provide: openapi_controller_1.ACTIVE_SPEC_SOURCE, useExisting: docs_service_1.DocsService });
+            exports.push(docs_service_1.DocsService);
+            logger.log(`docs engine enabled (authMode=${normalized.docs.authMode ?? 'public'}, ` +
+                `chaosOptIn=${normalized.docsChaosOptIn === true})`);
+        }
         return {
             module: SimCoreModule_1,
             global: true,
             imports,
-            controllers: [
-                health_controller_1.HealthController,
-                openapi_controller_1.OpenApiController,
-                admin_brand_controller_1.AdminBrandController,
-                control_controller_1.ControlController,
-            ],
-            providers: [
-                { provide: config_1.SIM_CORE_CONFIG, useValue: normalized },
-                {
-                    provide: chaos_service_1.ChaosService,
-                    useFactory: () => new chaos_service_1.ChaosService(normalized.seed),
-                },
-                {
-                    provide: driver_service_1.DriverService,
-                    useFactory: () => new driver_service_1.DriverService(normalized.driver),
-                },
-                {
-                    provide: request_tail_service_1.RequestTailService,
-                    useFactory: () => new request_tail_service_1.RequestTailService(normalized.requestTailSize),
-                },
-                {
-                    provide: scenario_registry_service_1.ScenarioRegistryService,
-                    useFactory: () => new scenario_registry_service_1.ScenarioRegistryService(normalized.scenarios ?? []),
-                },
-                control_service_1.ControlService,
-                control_guard_1.ControlAuthGuard,
-                request_tail_middleware_1.RequestTailMiddleware,
-                { provide: core_1.APP_INTERCEPTOR, useClass: chaos_interceptor_1.ChaosInterceptor },
-            ],
-            exports: [
-                config_1.SIM_CORE_CONFIG,
-                chaos_service_1.ChaosService,
-                driver_service_1.DriverService,
-                request_tail_service_1.RequestTailService,
-                scenario_registry_service_1.ScenarioRegistryService,
-                control_service_1.ControlService,
-            ],
+            controllers,
+            providers,
+            exports,
         };
     }
     configure(consumer) {

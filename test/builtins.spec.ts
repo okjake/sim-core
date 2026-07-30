@@ -89,6 +89,7 @@ describe('built-in routes', () => {
           tagline: 'Widgets, sincerely',
         },
         driver: true,
+        docs: false,
       });
     });
   });

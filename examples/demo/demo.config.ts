@@ -1,10 +1,16 @@
+import { resolve } from 'node:path';
+
 import {
   p,
+  type DocsConfig,
   type FlowDefinition,
   type OpenApiDocument,
   type Scenario,
   type SimCoreConfig,
 } from '../../src';
+
+/** Baseline docs content shipped with the example — see `examples/demo/content`. */
+export const DEMO_CONTENT_DIR = resolve(__dirname, 'content');
 
 export const DEMO_CONTROL_TOKEN = 'demo-control-token-0123456789';
 
@@ -90,9 +96,24 @@ export interface DemoConfigOverrides {
   /** Model a receive-only service (like sim-staybase) with no traffic driver. */
   noDriver?: boolean;
   admin?: boolean;
+  /**
+   * Turn on the docs engine. Off by default, which is exactly what the
+   * backcompat suite asserts: a v0.1-style config must behave as it did.
+   * Defaults to an in-memory database seeded from `examples/demo/content`.
+   */
+  docs?: Partial<DocsConfig> | boolean;
+  docsAuthCheck?: SimCoreConfig['docsAuthCheck'];
+  docsChaosOptIn?: boolean;
 }
 
 export function createDemoConfig(overrides: DemoConfigOverrides = {}): SimCoreConfig {
+  const docsOverrides =
+    overrides.docs === undefined || overrides.docs === false
+      ? null
+      : overrides.docs === true
+        ? {}
+        : overrides.docs;
+
   const config: SimCoreConfig = {
     name: 'demo',
     version: '0.1.0',
@@ -102,6 +123,18 @@ export function createDemoConfig(overrides: DemoConfigOverrides = {}): SimCoreCo
     scenarios: [badPayloadsScenario],
     admin: overrides.admin ?? true,
     seed: 'demo-seed',
+    ...(docsOverrides
+      ? {
+          docs: {
+            enabled: true,
+            contentDir: DEMO_CONTENT_DIR,
+            databaseFile: ':memory:',
+            ...docsOverrides,
+          },
+        }
+      : {}),
+    ...(overrides.docsAuthCheck ? { docsAuthCheck: overrides.docsAuthCheck } : {}),
+    ...(overrides.docsChaosOptIn ? { docsChaosOptIn: true } : {}),
     driver: {
       baseUrl: overrides.driverBaseUrl ?? 'http://127.0.0.1:3000',
       flows: demoFlows,

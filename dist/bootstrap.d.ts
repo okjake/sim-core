@@ -14,6 +14,16 @@ export interface BootstrapSimServiceOptions {
     listen?: boolean;
     /** Passed straight to `NestFactory.create` — `false` silences Nest logging. */
     logger?: NestApplicationOptions['logger'];
+    /**
+     * Capture the raw request body on `req.rawBody`.
+     *
+     * **Required by any service that receives platform webhooks.** Signature
+     * verification runs over the exact bytes that were signed, and
+     * `JSON.stringify(req.body)` is not those bytes — key order and whitespace
+     * differ, so every check would fail in a way that looks like a wrong secret.
+     * See `verifyPlatformWebhook` and the receiver recipe in the README.
+     */
+    rawBody?: boolean;
 }
 /**
  * Thin `NestFactory` wrapper with the settings every sim service wants:

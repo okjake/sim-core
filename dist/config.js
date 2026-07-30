@@ -28,6 +28,15 @@ function normalizeSimCoreConfig(config) {
             throw new Error('SimCoreConfig.driver.baselineRequestsPerMinute must be >= 0');
         }
     }
+    if (config.docs?.enabled) {
+        const mode = config.docs.authMode ?? 'public';
+        if (mode !== 'public' && mode !== 'required') {
+            throw new Error("SimCoreConfig.docs.authMode must be 'public' or 'required'");
+        }
+        if (mode === 'required' && typeof config.docsAuthCheck !== 'function') {
+            throw new Error("SimCoreConfig.docs.authMode is 'required' but no docsAuthCheck function was supplied");
+        }
+    }
     return {
         ...config,
         version: config.version ?? '0.0.0',

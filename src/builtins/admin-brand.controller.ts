@@ -8,6 +8,8 @@ export interface AdminBrandPayload {
   brand: SimBrand;
   /** Whether a traffic driver exists, so the SPA can hide driver controls. */
   driver: boolean;
+  /** Whether the docs engine is on, so the SPA can hide the Docs tab. */
+  docs: boolean;
 }
 
 /**
@@ -26,6 +28,7 @@ export class AdminBrandController {
       version: this.config.version ?? '0.0.0',
       brand: this.config.brand,
       driver: Boolean(this.config.driver),
+      docs: this.config.docs?.enabled === true,
     };
   }
 }

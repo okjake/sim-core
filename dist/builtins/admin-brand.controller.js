@@ -31,6 +31,7 @@ let AdminBrandController = class AdminBrandController {
             version: this.config.version ?? '0.0.0',
             brand: this.config.brand,
             driver: Boolean(this.config.driver),
+            docs: this.config.docs?.enabled === true,
         };
     }
 };

@@ -12,11 +12,12 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.OpenApiController = void 0;
+exports.OpenApiController = exports.ACTIVE_SPEC_SOURCE = void 0;
 exports.stripControlPaths = stripControlPaths;
 const common_1 = require("@nestjs/common");
 const node_crypto_1 = require("node:crypto");
 const config_1 = require("../config");
+const conditional_1 = require("../http/conditional");
 /** The control plane is never part of a sim company's published contract. */
 function stripControlPaths(doc) {
     if (!doc.paths)
@@ -24,28 +25,50 @@ function stripControlPaths(doc) {
     const paths = Object.fromEntries(Object.entries(doc.paths).filter(([path]) => !path.startsWith('/__control')));
     return { ...doc, paths };
 }
+/** DI token for the optional {@link ActiveSpecSource}. */
+exports.ACTIVE_SPEC_SOURCE = 'SIM_ACTIVE_SPEC_SOURCE';
+/**
+ * `GET /openapi.json`.
+ *
+ * With docs disabled (the v0.1.0 default) this serves `config.openapi`,
+ * hashed once at construction. With docs enabled it serves the ACTIVE
+ * published spec version, whose ETag and `Last-Modified` move on every
+ * publish. Both paths answer `If-None-Match` and `If-Modified-Since`.
+ */
 let OpenApiController = class OpenApiController {
-    document;
+    docs;
     body;
     etag;
+    lastModifiedMs;
     lastModified;
-    constructor(config) {
-        this.document = stripControlPaths(config.openapi);
-        this.body = JSON.stringify(this.document);
+    constructor(config, docs) {
+        this.docs = docs;
+        this.body = JSON.stringify(stripControlPaths(config.openapi));
         this.etag = `"${(0, node_crypto_1.createHash)('sha256').update(this.body).digest('hex').slice(0, 32)}"`;
-        this.lastModified = new Date().toUTCString();
+        this.lastModifiedMs = Date.now();
+        this.lastModified = (0, conditional_1.httpDate)(this.lastModifiedMs);
+    }
+    current() {
+        if (this.docs)
+            return this.docs.activeSpec();
+        return {
+            body: this.body,
+            etag: this.etag,
+            lastModified: this.lastModified,
+            lastModifiedMs: this.lastModifiedMs,
+        };
     }
     serve(req, res) {
-        res.setHeader('etag', this.etag);
-        res.setHeader('last-modified', this.lastModified);
+        const spec = this.current();
+        res.setHeader('etag', spec.etag);
+        res.setHeader('last-modified', spec.lastModified);
         res.setHeader('cache-control', 'public, max-age=60');
         res.setHeader('content-type', 'application/json; charset=utf-8');
-        const ifNoneMatch = req.headers['if-none-match'];
-        if (ifNoneMatch && ifNoneMatch.split(',').some((tag) => tag.trim() === this.etag)) {
+        if ((0, conditional_1.isNotModified)(req, { etag: spec.etag, lastModified: spec.lastModifiedMs })) {
             res.status(304).end();
             return;
         }
-        res.status(200).send(this.body);
+        res.status(200).send(spec.body);
     }
 };
 exports.OpenApiController = OpenApiController;
@@ -60,5 +83,7 @@ __decorate([
 exports.OpenApiController = OpenApiController = __decorate([
     (0, common_1.Controller)(),
     __param(0, (0, common_1.Inject)(config_1.SIM_CORE_CONFIG)),
-    __metadata("design:paramtypes", [Object])
+    __param(1, (0, common_1.Optional)()),
+    __param(1, (0, common_1.Inject)(exports.ACTIVE_SPEC_SOURCE)),
+    __metadata("design:paramtypes", [Object, Object])
 ], OpenApiController);

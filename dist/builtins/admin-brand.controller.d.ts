@@ -5,6 +5,8 @@ export interface AdminBrandPayload {
     brand: SimBrand;
     /** Whether a traffic driver exists, so the SPA can hide driver controls. */
     driver: boolean;
+    /** Whether the docs engine is on, so the SPA can hide the Docs tab. */
+    docs: boolean;
 }
 /**
  * Unauthenticated, display-only metadata for the admin SPA's shell (title,

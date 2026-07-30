@@ -12,6 +12,36 @@ One `SimCoreModule.forRoot(config)` import gives a NestJS service:
 - the **`/__control` plane** — bearer-authenticated operator API
 - an **admin SPA** at `/admin`
 - a **request tail** — in-memory ring buffer of the last 200 requests
+- **v0.2.0** — an opt-in **docs engine** (`/docs`, versioned OpenAPI specs,
+  guides, changelog, SQLite-backed) and **webhook verification helpers**
+
+---
+
+## What changed in v0.2.0
+
+**Every export, route and config field from v0.1.0 still works unchanged.**
+Docs are off by default, so a consumer can repin the tag and redeploy without
+touching its config — `test/backcompat.spec.ts` exists to keep that true.
+
+The one thing a repin *does* require is the **package rename to
+`@okjake/sim-core`** — see the boxed note under [Install](#install). It is a
+rename only; no behaviour moved with it.
+
+| Added | Opt-in? |
+|---|---|
+| Docs engine: `/docs`, `/docs/guides/:slug`, `/docs/changelog`, versioned specs on `/openapi.json` | yes — `docs.enabled` |
+| Storage module (`better-sqlite3`, `DATA_DIR`, versioned migrations) | yes — used only by the docs engine |
+| `/__control/docs/*` editor API and the admin SPA's **Docs** tab | yes — follows `docs.enabled` |
+| `POST /__control/reset-docs` | yes — 404s when docs are off |
+| Webhook helpers (`verifyPlatformWebhook` and friends) | no — pure functions, import when wanted |
+| `GET /__control/webhooks` + `WebhookRecorderService` | no — always on, in-memory, ~nothing |
+| `If-Modified-Since` handling on `/openapi.json` | no — strictly more correct |
+| `docs` field on `GET /__admin/brand` | no — additive field |
+
+The only observable change for a docs-disabled service is the additive
+`docs: false` field on `/__admin/brand`, the new `/__control/webhooks` route,
+and `/openapi.json` now honouring `If-Modified-Since` as well as
+`If-None-Match`.
 
 ---
 
@@ -32,8 +62,17 @@ Two rules the design enforces rather than documents:
    value can turn a sim company into a load generator.
 
 `POST /__control/reset` is the kill switch. Chaos never applies to
-`/__control`, `/health`, `/openapi.json` or `/admin`, so the kill switch stays
-reachable during an outage scenario.
+`/__control`, `/__admin`, `/health` or `/admin`, so the kill switch stays
+reachable during an outage scenario. `/openapi.json` and `/docs` are exempt too
+unless a consumer sets `docsChaosOptIn: true` — an outage that also broke the
+spec endpoint would look to the platform like an upstream that deleted its API,
+which is a different (and much louder) event than the one being simulated.
+
+A third rule arrives with v0.2.0: **documentation is durable state.** Docs
+edits and publishes have no TTL and do not auto-revert, because a spec version
+that unpublished itself after ten minutes would be indistinguishable from a
+real upstream rollback. `POST /__control/reset-docs` is their separate,
+explicit reset, and `content/` in the consumer repo is the baseline it restores.
 
 ---
 
@@ -45,12 +84,55 @@ sim-core is consumed as a pinned git dependency. Add to the consumer's
 ```json
 {
   "dependencies": {
-    "sim-core": "github:okjake/sim-core#v0.1.0"
+    "@okjake/sim-core": "github:okjake/sim-core#v0.2.0"
   }
 }
 ```
 
+```ts
+import { SimCoreModule, bootstrapSimService } from '@okjake/sim-core';
+```
+
 Then `pnpm install`.
+
+> ### ⚠️ v0.2.0 renames the package to `@okjake/sim-core`
+>
+> **This is the one breaking change in v0.2.0, and it is a rename, not a
+> behaviour change.** The unscoped name `sim-core` is taken on the public npm
+> registry by an unrelated 2019 package. Even though we install from GitHub,
+> an unscoped name that resolves to somebody else's package on the default
+> registry is a dependency-confusion foothold — one misconfigured registry or
+> one `npm install sim-core` typo and a consumer is running a stranger's code.
+> A scope closes it.
+>
+> **The GitHub repo is still `okjake/sim-core`**, so the git ref
+> (`github:okjake/sim-core#v0.2.0`) is unchanged. Only the npm package name
+> moved.
+>
+> Repinning from v0.1.0 therefore takes **two** edits, not one:
+>
+> 1. **The dependency key** in `package.json`:
+>    ```diff
+>    -    "sim-core": "github:okjake/sim-core#v0.1.0"
+>    +    "@okjake/sim-core": "github:okjake/sim-core#v0.2.0"
+>    ```
+> 2. **Every import specifier** in the consumer's source:
+>    ```diff
+>    -import { SimCoreModule } from 'sim-core';
+>    +import { SimCoreModule } from '@okjake/sim-core';
+>    ```
+>    ```bash
+>    # from the consumer repo root
+>    grep -rl "from 'sim-core'" src | xargs sed -i '' "s|from 'sim-core'|from '@okjake/sim-core'|g"
+>    ```
+>
+> Miss the second and the build fails loudly at import time — pnpm's strict
+> `node_modules` will not resolve the old specifier — so there is no silent
+> failure mode here. Delete the stale `node_modules/sim-core` entry with a
+> clean `pnpm install` after the change.
+>
+> Nothing else about the upgrade is breaking: every export, route and config
+> field from v0.1.0 still works exactly as it did.
 
 ### pnpm caveats (verified, not guessed)
 
@@ -60,19 +142,26 @@ Then `pnpm install`.
   reliable option — a `prepare`-based build would need devDependencies
   (TypeScript, Vite, React) installed inside every consumer's store on every
   install, and is skipped entirely under `--ignore-scripts` / restricted CI.
-- **Pin a tag, not a branch.** `#v0.1.0` resolves to an immutable commit.
+- **Pin a tag, not a branch.** `#v0.2.0` resolves to an immutable commit.
   `github:okjake/sim-core` (no ref) tracks the default branch and will drift.
 - Peer dependencies are **not** bundled. The consumer must already depend on
   `@nestjs/common`, `@nestjs/core`, `@nestjs/platform-express`,
   `reflect-metadata` and `rxjs` (all ^11 / ^0.2 / ^7 respectively). pnpm's
   strict node_modules means a missing peer is a hard failure at import time,
   not a subtle one.
-- sim-core brings exactly one runtime dependency of its own:
-  `@nestjs/serve-static` (for `/admin`).
+- sim-core brings two runtime dependencies of its own: `@nestjs/serve-static`
+  (for `/admin`) and `better-sqlite3` (for the docs engine).
+- **`better-sqlite3` needs no build step** — verified, not assumed. v13 ships
+  prebuilt `.node` binaries for linux/darwin/win × x64/arm64 (plus musl) inside
+  the npm tarball, so it loads correctly even though pnpm 10 blocks dependency
+  build scripts by default and even under `--ignore-scripts`. You do **not**
+  need `pnpm approve-builds` or an `onlyBuiltDependencies` entry. CI asserts
+  this on every run. It is installed for every consumer, but only *loaded* when
+  `docs.enabled` is true — the `require` is lazy, inside `SimStorage`.
 - Bumping the tag: change the ref, then `pnpm install`. pnpm caches git deps by
   resolved commit, so a moved tag needs `pnpm store prune` or a fresh ref.
 - **The repo is private, so the install needs git credentials.** pnpm probes
-  for SSH access and, when it finds it, rewrites `github:okjake/sim-core#v0.1.0`
+  for SSH access and, when it finds it, rewrites `github:okjake/sim-core#v0.2.0`
   to `git@github.com:okjake/sim-core.git` — which is what a developer machine
   with a GitHub SSH key gets. CI without an SSH key falls back to HTTPS and
   will fail on a private repo unless you give it a token:
@@ -95,7 +184,7 @@ Requires **Node 22+**.
 
 ```ts
 // config.ts
-import { p, type SimCoreConfig } from 'sim-core';
+import { p, type SimCoreConfig } from '@okjake/sim-core';
 import openapi from './openapi.json';
 
 export const config: SimCoreConfig = {
@@ -112,7 +201,7 @@ export const config: SimCoreConfig = {
 ```ts
 // app.module.ts
 import { Module } from '@nestjs/common';
-import { SimCoreModule } from 'sim-core';
+import { SimCoreModule } from '@okjake/sim-core';
 
 import { config } from './config';
 import { ListingsController } from './listings.controller';
@@ -127,7 +216,7 @@ export class AppModule {}
 ```ts
 // main.ts
 import 'reflect-metadata';
-import { bootstrapSimService } from 'sim-core';
+import { bootstrapSimService } from '@okjake/sim-core';
 
 import { AppModule } from './app.module';
 import { config } from './config';
@@ -143,7 +232,8 @@ ties them together. The test suite runs against it.
 
 ## Public API surface
 
-Everything below is exported from the package root (`import { … } from 'sim-core'`).
+Everything below is exported from the package root
+(`import { … } from '@okjake/sim-core'`).
 
 ### Module + bootstrap
 
@@ -170,6 +260,24 @@ interface SimCoreConfig {
   requestTailSize?: number;      // default 200
   admin?: boolean;               // serve /admin; default true
   port?: number;                 // used by bootstrapSimService; default PORT || 3000
+
+  // --- v0.2.0, all optional ---
+  docs?: DocsConfig;                       // docs engine; DISABLED by default
+  docsAuthCheck?: (req: Request) => boolean;  // credential check for docs.authMode 'required'
+  docsChaosOptIn?: boolean;                // let chaos hit /docs + /openapi.json; default false
+  webhookHistorySize?: number;             // GET /__control/webhooks ring buffer; default 50
+}
+
+interface DocsConfig {
+  enabled?: boolean;                       // default false
+  authMode?: 'public' | 'required';        // default 'public'
+  contentDir?: string;                     // default `${cwd}/content`
+  seedOnBoot?: boolean;                    // seed when the tables are empty; default true
+  dataDir?: string;                        // overrides DATA_DIR
+  databaseFile?: string;                   // abs path, name in dataDir, or ':memory:'; default 'docs.sqlite'
+  databaseDriver?: SqlDatabaseFactory;     // test injection point; default better-sqlite3
+  title?: string;                          // default `${brand.displayName} developer docs`
+  intro?: string;                          // markdown blurb on /docs; must be static
 }
 
 interface SimBrand { displayName: string; color: string; tagline?: string }
@@ -187,7 +295,13 @@ function normalizeSimCoreConfig(config: SimCoreConfig): SimCoreConfig; // throws
 `normalizeSimCoreConfig` runs inside `forRoot` and **throws at bootstrap** on:
 a missing `name`; a `controlToken` shorter than 16 characters; an `openapi`
 without `openapi`/`info`; a `driver` without `baseUrl`; a
-`maxRequestsPerMinute` that is not `> 0`.
+`maxRequestsPerMinute` that is not `> 0`; and `docs.authMode: 'required'`
+without a `docsAuthCheck` (failing closed beats silently serving docs that were
+meant to be credentialed).
+
+`openapi` stays **required even with docs enabled**. It is the fallback served
+at `/openapi.json` before anything has been published, so a sim always answers
+a spec probe with something valid.
 
 ### Scenarios
 
@@ -381,7 +495,7 @@ so a real zod schema satisfies it. The bundled builders additionally implement
 SPA can render a form:
 
 ```ts
-import { p } from 'sim-core';
+import { p } from '@okjake/sim-core';
 
 params: p.object({
   rate: p.number({ min: 0, max: 1 }).default(0.25).describedAs('Failure rate'),
@@ -435,6 +549,327 @@ class RequestTailService {
 
 Also exported: `RequestTailMiddleware` (applied to all routes by the module).
 
+### Storage (v0.2.0)
+
+A thin `better-sqlite3` wrapper with a versioned migration table. **Only the
+docs engine uses it** — chaos, driver, request-tail and webhook state stay in
+memory by design, because they are supposed to vanish on restart.
+
+```ts
+const DEFAULT_DATA_DIR = './data';
+
+function resolveDataDir(override?: string): string;          // override › DATA_DIR › ./data
+function resolveDatabaseFile(file?: string, dataDir?: string): string;
+
+interface Migration { id: string; sql: string }              // id is immutable once shipped
+
+class SimStorage {
+  constructor(options?: StorageOptions);
+  readonly file: string;
+  readonly db: SqlDatabase;
+  migrate(migrations: Migration[]): AppliedMigration[];      // applies only what is missing
+  applied(): AppliedMigration[];
+  stmt(sql: string): SqlStatement;                           // prepared-statement cache
+  transaction<A extends unknown[], R>(fn: (...a: A) => R): (...a: A) => R;
+  close(): void;
+}
+
+interface StorageOptions {
+  file?: string;                 // default 'docs.sqlite'; ':memory:' supported
+  dataDir?: string;              // overrides DATA_DIR
+  driver?: SqlDatabaseFactory;   // (filename) => SqlDatabase, for tests
+  migrations?: Migration[];      // applied on open
+}
+```
+
+`DATA_DIR` defaults to `./data` and is gitignored. On Render it must be the
+mount path of the service's persistent disk. The directory is created on
+demand; migrations run in a transaction and roll back as a unit.
+
+`DOCS_MIGRATIONS` is exported so a consumer can inspect (never edit) the docs
+schema. Its single-active-spec invariant is a partial unique index —
+`CREATE UNIQUE INDEX … ON spec_versions (active) WHERE active = 1` — so the
+database rejects a second active row even if application code forgets to.
+
+### Docs engine (v0.2.0)
+
+Off unless `docs.enabled` is true. On, it adds a public documentation surface
+backed by SQLite, plus an editor behind the control token.
+
+**Entities**
+
+```ts
+interface SpecVersion {
+  id: string;                    // uuid
+  label: string;                 // unique, human-chosen: 'baseline', '2026-08-breaking'
+  spec: OpenApiDocument;
+  createdAt: string;             // ISO-8601
+  publishedAt: string | null;    // null while a draft
+  active: boolean;               // exactly one row may be true
+}
+interface Guide { slug; title; markdown; published; order; updatedAt }
+interface ChangelogEntry { id; date /* YYYY-MM-DD */; title; markdown; published; updatedAt }
+```
+
+**Lifecycle rules**
+
+- A version is created as a **draft**: invisible on `/docs` and on
+  `/openapi.json`.
+- **Publishing** stamps `publishedAt = now` and makes the version active,
+  deactivating whatever was active. Republishing an older version re-stamps
+  `publishedAt`: what `/openapi.json` serves has changed as of now, and
+  `Last-Modified` must move or conditional-GET clients never re-fetch.
+- A **published version is immutable**. `updateSpecVersion` on one throws 409 —
+  the platform's spec-diff pipeline relies on published specs not changing
+  underneath it. Draft from it instead.
+- The **active version cannot be deleted**.
+- Unpublished guides and changelog entries 404 on the public surface but are
+  fully visible and editable through `/__control/docs/*`.
+
+**`GET /openapi.json` with docs enabled** serves the active published version:
+strong `ETag` (sha256 of the served body, first 32 hex chars, quoted),
+`Last-Modified` = the publish time, `Cache-Control: public, max-age=60`. It
+answers `If-None-Match` **and** `If-Modified-Since`, and `If-None-Match` wins
+when both are sent (RFC 9110 §13.1.3). `HEAD` works — the platform HEAD-probes
+specs. `/__control` paths are stripped from published versions just as they are
+from `config.openapi`. With no published version it falls back to
+`config.openapi`.
+
+**Deterministic rendering.** `/docs`, `/docs/guides/:slug` and
+`/docs/changelog` are server-rendered from markdown and are **byte-identical
+for identical content** — no render timestamps, no build hashes, no generated
+ids, no database ids in the markup. The platform normalises these pages to text
+and hashes them to detect documentation changes, so any per-render variation
+would register as a phantom upstream change. The renderer is hand-rolled
+(`src/docs/markdown.ts`) rather than a dependency precisely so that guarantee
+cannot be broken by someone else's patch release. `test/docs.spec.ts` renders
+every page twice, and renders it again from a second independently-seeded
+service, comparing bytes each time.
+
+The markdown subset: ATX headings, paragraphs, fenced/indented code,
+blockquotes, nested ordered/unordered lists, horizontal rules, pipe tables, and
+inline `code` / `**bold**` / `*italic*` / `[link](href)` / `![img](src)` /
+`<autolink>`. Raw HTML is escaped, never passed through; `javascript:` and
+`data:` link targets are rewritten to `#`.
+
+**Docs auth.** `docs.authMode: 'required'` runs every docs route through the
+consumer's `docsAuthCheck(req) => boolean`. sim-core has no opinion about the
+credential scheme — sim-pebblepay switches between bearer, basic and a custom
+header and needs to fail all of them on demand for `credential-expiry`
+scenarios. A check that throws counts as a failed check. `/health` and
+`/openapi.json` stay public regardless: the platform polls them unauthenticated.
+
+**Chaos.** `/docs` and `/openapi.json` are chaos-exempt by default. Set
+`docsChaosOptIn: true` to make them chaos-eligible; `/__control`, `/__admin`,
+`/health` and `/admin` are exempt unconditionally, so the kill switch always
+survives.
+
+**Service API** (`app.get(DocsService)`):
+
+```ts
+class DocsService {
+  activeSpec(): ServedSpec;                                  // cached body + validators
+  refreshServedSpec(): ServedSpec;
+
+  listSpecVersions(): SpecVersionSummary[];
+  getSpecVersion(id: string): SpecVersion;                   // throws 404
+  createSpecVersion(input: { label; spec; publish? }): SpecVersion;
+  draftFromActive(label: string): SpecVersion;
+  updateSpecVersion(id: string, patch: { label?; spec? }): SpecVersion;   // drafts only
+  publishSpecVersion(id: string): SpecVersion;
+  publishSpecVersionByLabel(label: string): SpecVersion;     // how a preset scenario publishes
+  deleteSpecVersion(id: string): void;
+
+  listGuides(onlyPublished?: boolean): Guide[];
+  getGuide(slug: string): Guide;
+  upsertGuide(input: GuideInput): Guide;
+  deleteGuide(slug: string): void;
+
+  listChangelog(onlyPublished?: boolean): ChangelogEntry[];
+  upsertChangelogEntry(input: ChangelogEntryInput): ChangelogEntry;
+  deleteChangelogEntry(id: string): void;
+
+  resetDocs(): SeedResult;                                   // wipe + reseed from content/
+  lastSeed(): SeedResult | null;
+  renderIndex(): string;
+  renderGuide(slug: string): { html: string; found: boolean };
+  renderChangelog(): string;
+  status(): DocsStatus;
+  readonly repo: DocsRepository;                             // escape hatch
+}
+```
+
+Also exported: `DocsRepository`, `DOCS_MIGRATIONS`, `DocsController`,
+`DocsControlController`, `DocsAuthGuard`, `contentEtag`, the renderers
+(`renderDocsIndex`, `renderGuidePage`, `renderChangelogPage`,
+`renderNotFoundPage`), `renderMarkdown`, `renderInline`, `escapeHtml`,
+`parseFrontmatter`, `readString` / `readBoolean` / `readNumber`, `loadContent`,
+`seedFromContent`, `slugify`, the DTO parsers, and `ACTIVE_SPEC_SOURCE` /
+`ActiveSpecSource` (the token `OpenApiController` uses to reach the docs engine
+without importing it).
+
+#### `content/` — the seeding format
+
+Baseline documentation is checked into the **consumer's** repo and seeded into
+the database on first boot (when all three docs tables are empty), and again on
+every `POST /__control/reset-docs`. The database is disposable; `content/` is
+the source of truth.
+
+```
+content/
+  docs.json                 optional manifest
+  specs/
+    baseline.json           an OpenAPI document; the FILENAME is the label
+    additive.json
+    breaking.json
+  guides/
+    getting-started.md      frontmatter + markdown
+    charges-lifecycle.md
+  changelog/
+    2026-07-01-launch.md
+    2026-07-15-additive.md
+```
+
+`content/docs.json` — every field optional:
+
+```json
+{
+  "activeSpec": "baseline",
+  "guides": ["getting-started", "charges-lifecycle"]
+}
+```
+
+| Directory | Rules |
+|---|---|
+| `specs/*.json` | Must be a real OpenAPI document (`openapi` + `info`), or it is skipped with a warning. The label is the filename without `.json`. Exactly one is published + activated: `docs.json.activeSpec` if it names a real file, else the single file if there is only one, else the alphabetically first (with a warning). Every other spec is seeded as a **draft**. |
+| `guides/*.md` | Frontmatter `title` (default: filename), `slug` (default: slugified filename), `published` (default **true**), `order` (default: sorts last). Manifest `guides` order wins over frontmatter `order`. |
+| `changelog/*.md` | Frontmatter `date` **required** as `YYYY-MM-DD`, or a `YYYY-MM-DD-` filename prefix supplies it; an entry with neither is skipped with a warning. `title` (default: the rest of the filename), `id` (default: slugified filename), `published` (default **true**). |
+
+Frontmatter is a YAML *subset*: `key: value` scalars between `---` fences —
+quoted or bare strings, numbers, `true`/`false`. No nesting, no lists, no
+multi-line scalars. Deliberately small enough to eyeball.
+
+```md
+---
+title: Charges lifecycle
+order: 2
+published: true
+---
+
+A charge moves through `pending` → `succeeded` or `failed`.
+```
+
+A missing `content/` directory is not an error — docs simply start empty and
+`/openapi.json` serves `config.openapi`. See
+[`examples/demo/content`](./examples/demo/content) for a working set.
+
+### Webhooks (v0.2.0)
+
+```ts
+const DEFAULT_WEBHOOK_SIGNATURE_HEADER = 'x-partner-api-signature';
+
+function verifyPlatformWebhook(rawBody: Buffer, signatureHeader: string, secret: string): boolean;
+function signPlatformWebhook(rawBody: Buffer, secret: string): string;   // 'sha256=<hex>'
+function extractRawBody(req: Request): Buffer | null;
+function inspectWebhookRequest(req: Request, options: WebhookVerificationOptions): WebhookVerification;
+function assertPlatformWebhook(req: Request, options: WebhookVerificationOptions):
+  { rawBody: Buffer; body: unknown };                        // throws 401
+
+interface WebhookVerificationOptions { secret: string; signatureHeader?: string }
+interface WebhookVerification {
+  verified: boolean;
+  rawBody: Buffer | null;
+  signature: string | null;
+  reason: 'ok' | 'no-raw-body' | 'missing-signature' | 'bad-signature' | 'no-secret';
+}
+```
+
+`verifyPlatformWebhook` computes a lowercase-hex HMAC-SHA256 over the **raw
+body bytes** and compares with `timingSafeEqual`. It accepts `sha256=<hex>` or
+a bare `<hex>` header, case-insensitively. It **never throws**: a
+length-mismatched, non-hex, empty or absent signature returns `false`. That
+length guard is the point — `timingSafeEqual` throws on unequal-length buffers,
+so without it a malformed header would be a 500 instead of a 401.
+
+#### Receiver recipe
+
+**1. Create the app with `rawBody: true`.** This is the step that bites.
+`JSON.stringify(req.body)` is *not* the byte sequence that was signed — key
+order and whitespace differ — so re-serialising fails every check in a way that
+looks exactly like a wrong secret.
+
+```ts
+void bootstrapSimService(AppModule, config, { rawBody: true });
+```
+
+(Under plain `NestFactory.create` it is the same option:
+`NestFactory.create(AppModule, { rawBody: true })`. `assertPlatformWebhook`
+returns `reason: 'no-raw-body'` when it is missing, so the failure names
+itself.)
+
+**2. Verify first, record, respond fast.** The platform retries slow or non-2xx
+deliveries, so real work belongs after the response.
+
+```ts
+@Controller('webhooks')
+export class WebhooksController {
+  constructor(private readonly recorder: WebhookRecorderService) {}
+
+  @Post('partner-api')
+  @HttpCode(200)
+  receive(@Req() req: Request): { received: true } {
+    let body: unknown;
+    try {
+      ({ body } = assertPlatformWebhook(req, { secret: process.env.WEBHOOK_SECRET! }));
+    } catch (error) {
+      this.recorder.record({ path: '/webhooks/partner-api', verified: false, status: 401 });
+      throw error;                                    // -> 401
+    }
+    this.recorder.record({ path: '/webhooks/partner-api', verified: true, body });
+    return { received: true };
+  }
+}
+```
+
+`WebhookRecorderService` is provided by `SimCoreModule` on every service — just
+inject it. A complete, tested receiver lives in
+[`examples/demo/webhooks.controller.ts`](./examples/demo/webhooks.controller.ts).
+
+```ts
+const WEBHOOK_RECORDER_CAPACITY = 50;   // override with config.webhookHistorySize
+
+interface RecordedWebhook {
+  seq: number; at: string;              // ISO-8601
+  path: string; event: string | null;   // event sniffed from event / type / event_type
+  verified: boolean; status: number; body: unknown;   // body truncated past 4000 chars
+}
+
+class WebhookRecorderService {
+  readonly capacity: number;
+  record(input: RecordWebhookInput): RecordedWebhook;
+  list(limit?: number): RecordedWebhook[];   // newest first
+  size(): number;
+  clear(): void;
+}
+```
+
+Record rejected deliveries too — "did it even arrive?" is the first question
+asked when a signature mismatch is being debugged.
+
+### Conditional requests (v0.2.0)
+
+```ts
+function httpDate(input: number | Date): string;              // IMF-fixdate
+function toHttpSeconds(input: number | Date): number;         // one-second resolution
+function isNotModified(req: Request, target: ConditionalTarget): boolean;
+
+interface ConditionalTarget { etag: string; lastModified: number | Date }
+```
+
+`If-None-Match` takes precedence when both validators are present; `*` matches
+anything; weak-tag prefixes are stripped before comparison; an unparseable
+`If-Modified-Since` is ignored rather than treated as a match.
+
 ### Other exports
 
 `ControlService`, `ControlController`, `ControlAuthGuard`, `ControlState`,
@@ -442,7 +877,9 @@ Also exported: `RequestTailMiddleware` (applied to all routes by the module).
 `parseActivateScenarioBody`, `parseDriverOverrideBody`, `ActivateScenarioBody`,
 `DriverOverrideBody`, `HealthController`, `HealthPayload`, `OpenApiController`,
 `stripControlPaths`, `AdminBrandController`, `AdminBrandPayload`,
-`resolveAdminDist`.
+`resolveAdminDist`, and — new in v0.2.0 — `DOCS_CHAOS_PREFIXES` and
+`ChaosExemptionOptions` (`isChaosExempt(path, { docsChaosOptIn })`; the
+single-argument form from v0.1.0 still works).
 
 ---
 
@@ -451,9 +888,12 @@ Also exported: `RequestTailMiddleware` (applied to all routes by the module).
 | Method | Path | Auth | Notes |
 |---|---|---|---|
 | GET | `/health` | none | `{ status: 'ok', uptime: number, version: string }` |
-| GET | `/openapi.json` | none | `ETag`, `Last-Modified`, `Cache-Control`; 304 on `If-None-Match`; `/__control` paths stripped |
+| GET/HEAD | `/openapi.json` | none | `ETag`, `Last-Modified`, `Cache-Control`; 304 on `If-None-Match` or `If-Modified-Since`; `/__control` paths stripped. Serves the active published spec version when docs are enabled, else `config.openapi` |
 | GET | `/admin/*` | none (SPA asks for the token) | static SPA, only when `admin !== false` and `dist/public` exists |
-| GET | `/__admin/brand` | none | display-only `{ name, version, brand, driver }` for the SPA shell |
+| GET | `/__admin/brand` | none | display-only `{ name, version, brand, driver, docs }` for the SPA shell |
+| GET | `/docs` | `docs.authMode` | **docs only.** Index: active spec label, published guides, changelog link |
+| GET | `/docs/guides/:slug` | `docs.authMode` | **docs only.** 404 (HTML) for a missing or unpublished slug |
+| GET | `/docs/changelog` | `docs.authMode` | **docs only.** Published entries, newest first |
 | — | `/__control/*` | **bearer** | see below |
 
 ### `__control` contract
@@ -470,12 +910,44 @@ from `/openapi.json`.
 | `POST /__control/scenario` | `{ scenario, params?, ttlSeconds }` | activate; **`ttlSeconds` required, 1..86400**; auto-reverts at expiry; replaces any active scenario. Returns the new state |
 | `POST /__control/driver` | `{ mode, multiplier?, ttlSeconds }` | driver override, same TTL rules. `mode` ∈ `baseline` \| `burst` \| `paused`; `multiplier` 1..100 and only meaningful for `burst`. Returns the new state |
 | `POST /__control/reset` | — | revert chaos + scenario + driver override to baseline immediately. Returns the new state |
+| `GET /__control/webhooks?limit=` | — | **v0.2.0.** `{ capacity, size, webhooks: RecordedWebhook[] }`, newest first. Always available |
+| `POST /__control/reset-docs` | — | **v0.2.0.** Wipe the docs tables and reseed from `content/`. Returns `SeedResult`. **200**, not 201. 404 when docs are disabled |
+
+**Docs editor routes** (v0.2.0, same bearer token, registered only when
+`docs.enabled` — a docs-disabled service 404s all of them, which is how the
+admin SPA decides whether to show its Docs tab). Unlike `/docs`, these expose
+drafts and unpublished content:
+
+| Method / path | Body | Behaviour |
+|---|---|---|
+| `GET /__control/docs` | — | `DocsStatus`: auth mode, database file, content dir, chaos opt-in, counts, active spec, applied migrations |
+| `GET /__control/docs/spec-versions` | — | `{ specVersions: SpecVersionSummary[] }` — drafts included, no spec bodies |
+| `GET /__control/docs/spec-versions/:id` | — | full `SpecVersion` including the spec |
+| `POST /__control/docs/spec-versions` | `{ label, spec?, fromActive?, publish? }` | create a draft. `spec` may be an object **or a JSON string** (400 with the parse error otherwise). Omit `spec` to copy the active version |
+| `PATCH /__control/docs/spec-versions/:id` | `{ label?, spec? }` | edit a **draft**. 409 on a published version |
+| `POST /__control/docs/spec-versions/:id/publish` | — | make it the active published version |
+| `DELETE /__control/docs/spec-versions/:id` | — | 409 on the active version. **200** |
+| `GET /__control/docs/guides` | — | `{ guides: Guide[] }`, drafts included |
+| `GET /__control/docs/guides/:slug` | — | one `Guide` |
+| `PUT /__control/docs/guides/:slug` | `{ title, markdown, published, order? }` | upsert. **200** |
+| `POST /__control/docs/guides` | `{ slug, title, markdown, published, order? }` | create |
+| `DELETE /__control/docs/guides/:slug` | — | **200**, 404 if unknown |
+| `GET /__control/docs/changelog` | — | `{ changelog: ChangelogEntry[] }`, drafts included |
+| `POST /__control/docs/changelog` | `{ date, title, markdown, published, id? }` | create |
+| `PUT /__control/docs/changelog/:id` | `{ date, title, markdown, published }` | upsert. **200** |
+| `DELETE /__control/docs/changelog/:id` | — | **200**, 404 if unknown |
+| `POST /__control/docs/preview` | `{ markdown }` | `{ html }` from the **same renderer the public pages use**, so the editor preview cannot drift from what gets published. **200** |
 
 Status codes: `201` on the POST routes (Nest default), `400` validation
 (`{ error: 'validation_failed', errors: { field: message } }` or
 `{ error: 'invalid_scenario_params' }`), `401` auth, `404` unknown scenario
 (`{ error: 'unknown_scenario', available: [...] }`), `409` driver override on a
 service with no driver (`{ error: 'driver_not_configured' }`).
+
+Docs-route status codes: `404` `unknown_spec_version` / `unknown_guide` /
+`unknown_changelog_entry` / `docs_disabled`; `409` `spec_version_published`
+(editing published history), `spec_version_active` (deleting the live version),
+`spec_label_taken`; `401` `docs_unauthorized` / `docs_auth_not_configured`.
 
 `GET /__control/state` shape:
 
@@ -510,13 +982,27 @@ curl -s -X POST -H "Authorization: Bearer $CONTROL_TOKEN" localhost:3000/__contr
 ## Admin SPA (`/admin`)
 
 Vite + React, built into `dist/public` at package build time and served
-statically by the Nest app. Phase-1 scope:
+statically by the Nest app.
+
+**Control tab**
 
 - control-token entry, kept in `localStorage`, sent as a bearer token
 - live state panel, polled every 5s
 - scenario list + activate form with a required TTL field
 - driver controls (mode, multiplier, TTL) and live rate/cap counters
 - request tail
+
+**Docs tab** (v0.2.0 — only shown when `/__admin/brand` reports `docs: true`)
+
+- **Spec versions**: list with `active` / `draft` / `published` badges; create a
+  draft from the active version or from scratch; edit the JSON in a textarea
+  that parses on every keystroke and blocks Save while it is invalid; publish;
+  delete. Published versions render read-only, because they are immutable.
+- **Guides** and **Changelog**: markdown editors with title, ordering (guides)
+  or date (changelog), a published toggle, and a **Preview** button that renders
+  through `POST /__control/docs/preview` — the same server-side renderer the
+  public pages use, so the preview cannot lie.
+- **Reset from content/**, behind a confirmation, and a link to the public docs.
 
 Themed with `brand.color`; light and dark. Set `admin: false` in the config to
 skip serving it.
@@ -535,10 +1021,69 @@ to build an app for supertest.
 > using it. `test/testing-module.spec.ts` demonstrates both paths.
 
 Useful handles: `app.get(ControlService)`, `app.get(ChaosService)`,
-`app.get(DriverService)`, `app.get(RequestTailService)`.
+`app.get(DriverService)`, `app.get(RequestTailService)`,
+`app.get(WebhookRecorderService)`, and `app.get(DocsService)` when docs are on.
 
 For driver tests, pass `driver.fetchImpl` to record requests without a network,
 and call `driver.tick(now)` directly instead of running the scheduled loop.
+
+**Docs tests.** Use `docs.databaseFile: ':memory:'` for a fresh, isolated
+database per app — no temp files, no cleanup, and seeding still runs from a
+real `content/` directory so the format is exercised. Point `docs.contentDir`
+at a fixture when you want to test a specific shape. When you need to prove
+durability instead of isolation, pass a `docs.dataDir` under `os.tmpdir()` and
+build the app twice.
+
+**Webhook tests.** Create the app with `{ rawBody: true }` and sign fixtures
+with `signPlatformWebhook(Buffer.from(JSON.stringify(payload)), secret)` —
+signing the same bytes you send is the whole trick, and the exported helper
+means each consumer is not reimplementing it (and its off-by-one bugs).
+
+---
+
+## Deploying a consumer to Render
+
+sim-core does not ship a `render.yaml` — each company repo owns its own — but
+every one of them looks like this. The only real decision is whether the
+service needs a disk, and that is decided entirely by whether it enables docs.
+
+**Docs-enabled service** (sim-pebblepay, sim-staybase) — needs a persistent
+disk, and `DATA_DIR` must be the mount path:
+
+```yaml
+services:
+  - type: web
+    name: sim-pebblepay
+    runtime: node
+    plan: starter               # a disk requires a paid plan
+    buildCommand: pnpm install --frozen-lockfile && pnpm build
+    startCommand: node dist/main.js
+    healthCheckPath: /health
+    disk:
+      name: pebblepay-data
+      mountPath: /var/data      # must equal DATA_DIR
+      sizeGB: 1
+    envVars:
+      - key: DATA_DIR
+        value: /var/data
+      - key: CONTROL_TOKEN
+        generateValue: true     # or sync: false to paste one in
+      - key: WEBHOOK_SECRET
+        sync: false             # comes from the platform at registration time
+```
+
+**Docs-disabled service** (sim-bookbridge) — no disk, no `DATA_DIR`; state is
+in memory by design and a restart is supposed to clear it.
+
+Two things worth knowing before the setup session:
+
+- **A disk costs zero-downtime deploys.** Render cannot run two instances
+  against one disk, so a disk-bearing service redeploys with a gap. That is an
+  accepted trade for the sim fleet — see "Decisions locked" in the fleet spec —
+  but it is why only the services that genuinely need durable docs get one.
+- **`content/` is the real source of truth, the disk is a cache.** If a disk is
+  ever lost or resized, `POST /__control/reset-docs` rebuilds the whole docs
+  database from the repo. Nothing that matters lives only on the disk.
 
 ---
 
@@ -551,22 +1096,29 @@ pnpm lint
 pnpm typecheck
 pnpm test
 pnpm verify         # all three
-pnpm example        # runs examples/demo on :3000
+pnpm example        # runs examples/demo on :3000 with docs enabled
+DOCS=0 pnpm example # ...and without, to see the v0.1.0-shaped service
 ```
 
 `dist/` is committed on purpose — see the note in `.gitignore` and the pnpm
 caveats above. **Rebuild and commit `dist/` with any change to `src/` or
 `admin/`**, or consumers will install stale code.
 
-Environment: see [`.env.example`](./.env.example) — `CONTROL_TOKEN` and `PORT`.
-No secrets are ever committed.
+Environment: see [`.env.example`](./.env.example) — `CONTROL_TOKEN`, `PORT`,
+`DATA_DIR`, `WEBHOOK_SECRET`. No secrets are ever committed.
+
+Test layout: `test/backcompat.spec.ts` is the contract with already-deployed
+consumers — treat a failure there as "the upgrade is not backward compatible",
+not as a test to update. `test/docs.spec.ts` owns the byte-identical rendering
+guarantee; a failure there is a real bug, not flake.
 
 ### Releasing
 
 ```bash
-pnpm verify && pnpm build
+pnpm verify && pnpm build   # ALWAYS build: dist/ is the consumption mechanism
 git commit -am "…" && git push
-git tag v0.2.0 && git push origin v0.2.0
+git tag -a v0.3.0 -m "…" && git push origin v0.3.0
 ```
 
-Consumers then bump their `github:okjake/sim-core#v0.2.0` ref.
+Consumers then bump their `github:okjake/sim-core#v0.3.0` ref. Tags are
+annotated; the lockfile pins the tag object's SHA, which is still immutable.

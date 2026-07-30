@@ -16,6 +16,7 @@ async function bootstrapSimService(appModule, config, options = {}) {
     const logger = new common_1.Logger(`sim:${config.name}`);
     const app = await core_1.NestFactory.create(appModule, {
         bufferLogs: false,
+        ...(options.rawBody ? { rawBody: true } : {}),
         ...(options.logger !== undefined ? { logger: options.logger } : {}),
     });
     app.set('trust proxy', 1);
@@ -30,7 +31,7 @@ async function bootstrapSimService(appModule, config, options = {}) {
     const host = options.host ?? '0.0.0.0';
     await app.listen(resolvedPort, host);
     logger.log(`${config.brand?.displayName ?? config.name} listening on :${resolvedPort} — ` +
-        `/health /openapi.json /admin /__control/state`);
+        `/health /openapi.json${config.docs?.enabled ? ' /docs' : ''} /admin /__control/state`);
     if (config.driver) {
         logger.log(`traffic driver -> ${config.driver.baseUrl} ` +
             `(baseline ${config.driver.baselineRequestsPerMinute}/min, hard cap ${config.driver.maxRequestsPerMinute}/min)`);

@@ -18,6 +18,111 @@ export {
   type OpenApiDocument,
 } from './config';
 
+// --- storage (v0.2.0) -------------------------------------------------------
+export {
+  SimStorage,
+  DEFAULT_DATA_DIR,
+  resolveDataDir,
+  resolveDatabaseFile,
+} from './storage/storage.service';
+export type {
+  AppliedMigration,
+  Migration,
+  SqlDatabase,
+  SqlDatabaseFactory,
+  SqlStatement,
+  StorageOptions,
+} from './storage/storage.types';
+
+// --- docs engine (v0.2.0) ---------------------------------------------------
+export { DocsService, contentEtag, type DocsStatus } from './docs/docs.service';
+export { DocsController } from './docs/docs.controller';
+export { DocsControlController } from './docs/docs-control.controller';
+export { DocsAuthGuard } from './docs/docs-auth.guard';
+export {
+  DocsRepository,
+  DOCS_MIGRATIONS,
+  type ChangelogEntryInput,
+  type GuideInput,
+  type SpecVersionInput,
+} from './docs/docs.repository';
+export {
+  loadContent,
+  seedFromContent,
+  slugify,
+  type DocsManifest,
+  type LoadedContent,
+  type SeedResult,
+} from './docs/docs.seed';
+export {
+  renderChangelogPage,
+  renderDocsIndex,
+  renderGuidePage,
+  renderNotFoundPage,
+  type DocsChangelogModel,
+  type DocsGuideModel,
+  type DocsIndexModel,
+  type DocsLayoutOptions,
+} from './docs/docs.render';
+export { escapeHtml, renderInline, renderMarkdown } from './docs/markdown';
+export {
+  parseFrontmatter,
+  readBoolean,
+  readNumber,
+  readString,
+  type FrontmatterValue,
+  type ParsedDocument,
+} from './docs/frontmatter';
+export {
+  parseChangelogBody,
+  parseCreateSpecVersionBody,
+  parseGuideBody,
+  parsePreviewBody,
+  parseUpdateSpecVersionBody,
+  type ChangelogBody,
+  type CreateSpecVersionBody,
+  type GuideBody,
+  type UpdateSpecVersionBody,
+} from './docs/docs.dto';
+export type {
+  ChangelogEntry,
+  DocsAuthCheck,
+  DocsAuthMode,
+  DocsConfig,
+  DocsPageLink,
+  Guide,
+  ServedSpec,
+  SpecVersion,
+  SpecVersionSummary,
+} from './docs/docs.types';
+
+// --- webhooks (v0.2.0) ------------------------------------------------------
+export {
+  DEFAULT_WEBHOOK_SIGNATURE_HEADER,
+  assertPlatformWebhook,
+  extractRawBody,
+  inspectWebhookRequest,
+  signPlatformWebhook,
+  verifyPlatformWebhook,
+  type WebhookVerification,
+  type WebhookVerificationOptions,
+} from './webhooks/verify';
+export {
+  WebhookRecorderService,
+  WEBHOOK_BODY_PREVIEW_CHARS,
+  WEBHOOK_RECORDER_CAPACITY,
+  type RecordWebhookInput,
+  type RecordedWebhook,
+} from './webhooks/webhook-recorder.service';
+
+// --- conditional requests (v0.2.0) ------------------------------------------
+export {
+  httpDate,
+  isNotModified,
+  toHttpSeconds,
+  type ConditionalTarget,
+} from './http/conditional';
+
 // --- scenarios --------------------------------------------------------------
 export { ScenarioRegistryService } from './scenarios/scenario-registry.service';
 export {
@@ -37,7 +142,13 @@ export type {
 
 // --- chaos ------------------------------------------------------------------
 export { ChaosService } from './chaos/chaos.service';
-export { ChaosInterceptor, CHAOS_EXEMPT_PREFIXES, isChaosExempt } from './chaos/chaos.interceptor';
+export {
+  ChaosInterceptor,
+  CHAOS_EXEMPT_PREFIXES,
+  DOCS_CHAOS_PREFIXES,
+  isChaosExempt,
+  type ChaosExemptionOptions,
+} from './chaos/chaos.interceptor';
 export type {
   ChaosControl,
   ChaosRule,
@@ -83,7 +194,12 @@ export type { ControlState, DriverOverrideState } from './control/control.servic
 
 // --- built-in routes --------------------------------------------------------
 export { HealthController, type HealthPayload } from './builtins/health.controller';
-export { OpenApiController, stripControlPaths } from './builtins/openapi.controller';
+export {
+  OpenApiController,
+  ACTIVE_SPEC_SOURCE,
+  stripControlPaths,
+  type ActiveSpecSource,
+} from './builtins/openapi.controller';
 export {
   AdminBrandController,
   type AdminBrandPayload,

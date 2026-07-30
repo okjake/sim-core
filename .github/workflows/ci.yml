@@ -30,6 +30,13 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      - name: better-sqlite3 loads without a build step
+        # pnpm 10 blocks dependency build scripts by default, and consumers
+        # install sim-core with --ignore-scripts in restricted CI. better-sqlite3
+        # ships prebuilt binaries in its tarball, so this must work anyway — if
+        # it ever stops, every consumer's install breaks, not just ours.
+        run: node -e "const D=require('better-sqlite3'); new D(':memory:').exec('select 1'); console.log('ok')"
+
       - name: Lint
         run: pnpm run lint
 
@@ -39,7 +46,15 @@ jobs:
       - name: Committed dist is complete
         # dist/ is committed so `github:` installs need no build step.
         run: |
-          for f in dist/index.js dist/index.d.ts dist/public/index.html; do
+          for f in \
+            dist/index.js \
+            dist/index.d.ts \
+            dist/docs/docs.service.js \
+            dist/storage/storage.service.js \
+            dist/webhooks/verify.js \
+            dist/public/index.html \
+            dist/public/assets/admin.js
+          do
             test -f "$f" || { echo "::error::missing $f — run 'pnpm build' and commit dist/"; exit 1; }
           done
 

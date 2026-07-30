@@ -16,6 +16,9 @@ export function resolveAdminDist(): string | null {
     // from source: <pkg>/src/builtins/admin-static.ts -> <pkg>/dist/public
     resolve(__dirname, '..', '..', 'dist', 'public'),
     resolve(process.cwd(), 'dist', 'public'),
+    // Installed as a dependency. The scoped name is the current one; the
+    // unscoped path stays as a fallback for anything still on v0.1.0's layout.
+    resolve(process.cwd(), 'node_modules', '@okjake', 'sim-core', 'dist', 'public'),
     resolve(process.cwd(), 'node_modules', 'sim-core', 'dist', 'public'),
   ];
 

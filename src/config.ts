@@ -1,3 +1,4 @@
+import type { DocsAuthCheck, DocsConfig } from './docs/docs.types';
 import type { DriverConfig } from './driver/driver.types';
 import type { Scenario } from './scenarios/scenario.types';
 
@@ -47,6 +48,30 @@ export interface SimCoreConfig {
   admin?: boolean;
   /** Port used by `bootstrapSimService`. Default `process.env.PORT` or 3000. */
   port?: number;
+
+  // --- v0.2.0 -----------------------------------------------------------
+
+  /**
+   * Docs engine (SQLite-backed spec versions, guides and changelog).
+   * **Disabled by default** — omit it and the service behaves exactly as it did
+   * on v0.1.0, with no data directory and no `/docs` routes.
+   */
+  docs?: DocsConfig;
+  /**
+   * Credential check for `docs.authMode: 'required'`. sim-core deliberately has
+   * no opinion about the scheme — sim-pebblepay switches between bearer, basic
+   * and a custom header, and needs to be able to fail all of them on command.
+   */
+  docsAuthCheck?: DocsAuthCheck;
+  /**
+   * Let chaos scenarios hit `/docs` and `/openapi.json`. **Default false**, and
+   * that default is load-bearing: an outage scenario that also broke the spec
+   * endpoint would look to the platform like the upstream deleted its API.
+   * sim-pebblepay turns this on deliberately to exercise docs-fetch failures.
+   */
+  docsChaosOptIn?: boolean;
+  /** Size of the received-webhook ring buffer behind `GET /__control/webhooks`. Default 50. */
+  webhookHistorySize?: number;
 }
 
 const TOKEN_MIN_LENGTH = 16;
@@ -80,6 +105,17 @@ export function normalizeSimCoreConfig(config: SimCoreConfig): Required<
     }
     if (!(baselineRequestsPerMinute >= 0)) {
       throw new Error('SimCoreConfig.driver.baselineRequestsPerMinute must be >= 0');
+    }
+  }
+  if (config.docs?.enabled) {
+    const mode = config.docs.authMode ?? 'public';
+    if (mode !== 'public' && mode !== 'required') {
+      throw new Error("SimCoreConfig.docs.authMode must be 'public' or 'required'");
+    }
+    if (mode === 'required' && typeof config.docsAuthCheck !== 'function') {
+      throw new Error(
+        "SimCoreConfig.docs.authMode is 'required' but no docsAuthCheck function was supplied",
+      );
     }
   }
 
