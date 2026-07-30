@@ -19,8 +19,7 @@
   },
   "files": [
     "dist",
-    "README.md",
-    ".env.example"
+    "README.md"
   ],
   "engines": {
     "node": ">=22.15.0"

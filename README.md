@@ -71,6 +71,21 @@ Then `pnpm install`.
   `@nestjs/serve-static` (for `/admin`).
 - Bumping the tag: change the ref, then `pnpm install`. pnpm caches git deps by
   resolved commit, so a moved tag needs `pnpm store prune` or a fresh ref.
+- **The repo is private, so the install needs git credentials.** pnpm probes
+  for SSH access and, when it finds it, rewrites `github:okjake/sim-core#v0.1.0`
+  to `git@github.com:okjake/sim-core.git` — which is what a developer machine
+  with a GitHub SSH key gets. CI without an SSH key falls back to HTTPS and
+  will fail on a private repo unless you give it a token:
+
+  ```yaml
+  - run: git config --global url."https://x-access-token:${{ secrets.GH_PAT }}@github.com/".insteadOf "https://github.com/"
+  - run: pnpm install --frozen-lockfile
+  ```
+
+  (or add a deploy key and keep the SSH path). A PAT with `repo` read scope is
+  enough.
+- The lockfile pins the **annotated tag object's** SHA, not the commit SHA.
+  That is still immutable and resolves correctly — don't "fix" it.
 
 Requires **Node 22+**.
 
