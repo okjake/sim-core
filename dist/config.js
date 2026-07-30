@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SIM_CORE_CONFIG = void 0;
 exports.normalizeSimCoreConfig = normalizeSimCoreConfig;
+const admin_auth_config_1 = require("./admin-auth/admin-auth.config");
 /** DI token for the resolved {@link SimCoreConfig}. */
 exports.SIM_CORE_CONFIG = 'SIM_CORE_CONFIG';
 const TOKEN_MIN_LENGTH = 16;
@@ -37,6 +38,11 @@ function normalizeSimCoreConfig(config) {
             throw new Error("SimCoreConfig.docs.authMode is 'required' but no docsAuthCheck function was supplied");
         }
     }
+    // Throws on an enabled-but-incomplete `adminAuth`. A gate that is half
+    // configured is an admin console open to the internet, so it fails at
+    // bootstrap rather than at the first sign-in attempt. Absent or disabled,
+    // this validates nothing at all — that is what keeps v0.2.0 configs working.
+    (0, admin_auth_config_1.resolveAdminAuthConfig)(config.adminAuth);
     return {
         ...config,
         version: config.version ?? '0.0.0',

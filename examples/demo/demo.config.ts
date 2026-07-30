@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 
 import {
   p,
+  type AdminAuthConfig,
   type DocsConfig,
   type FlowDefinition,
   type OpenApiDocument,
@@ -104,7 +105,16 @@ export interface DemoConfigOverrides {
   docs?: Partial<DocsConfig> | boolean;
   docsAuthCheck?: SimCoreConfig['docsAuthCheck'];
   docsChaosOptIn?: boolean;
+  /**
+   * Turn on the Google gate in front of `/admin`. Off by default — the
+   * backcompat suite depends on that, and so does `pnpm example`, which has to
+   * stay usable offline.
+   */
+  adminAuth?: Partial<AdminAuthConfig> | boolean;
 }
+
+/** Long enough to satisfy the >= 32 character rule, obviously not a secret. */
+export const DEMO_SESSION_SECRET = 'demo-admin-session-secret-0123456789abcdef';
 
 export function createDemoConfig(overrides: DemoConfigOverrides = {}): SimCoreConfig {
   const docsOverrides =
@@ -113,6 +123,13 @@ export function createDemoConfig(overrides: DemoConfigOverrides = {}): SimCoreCo
       : overrides.docs === true
         ? {}
         : overrides.docs;
+
+  const adminAuthOverrides =
+    overrides.adminAuth === undefined || overrides.adminAuth === false
+      ? null
+      : overrides.adminAuth === true
+        ? {}
+        : overrides.adminAuth;
 
   const config: SimCoreConfig = {
     name: 'demo',
@@ -135,6 +152,18 @@ export function createDemoConfig(overrides: DemoConfigOverrides = {}): SimCoreCo
       : {}),
     ...(overrides.docsAuthCheck ? { docsAuthCheck: overrides.docsAuthCheck } : {}),
     ...(overrides.docsChaosOptIn ? { docsChaosOptIn: true } : {}),
+    ...(adminAuthOverrides
+      ? {
+          adminAuth: {
+            enabled: true,
+            googleClientId: 'demo-client-id.apps.googleusercontent.com',
+            googleClientSecret: 'demo-client-secret',
+            allowedDomain: 'partnerapi.com',
+            sessionSecret: DEMO_SESSION_SECRET,
+            ...adminAuthOverrides,
+          } as AdminAuthConfig,
+        }
+      : {}),
     driver: {
       baseUrl: overrides.driverBaseUrl ?? 'http://127.0.0.1:3000',
       flows: demoFlows,

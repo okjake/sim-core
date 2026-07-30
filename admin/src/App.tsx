@@ -467,6 +467,11 @@ export default function App(): ReactElement {
             </button>
           </>
         ) : null}
+        {brand?.adminAuth ? (
+          <a className="as-button" href="/admin/auth/logout">
+            Sign out
+          </a>
+        ) : null}
       </header>
 
       {!token ? <TokenGate onSubmit={saveToken} /> : null}

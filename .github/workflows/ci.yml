@@ -50,6 +50,8 @@ jobs:
             dist/index.js \
             dist/index.d.ts \
             dist/docs/docs.service.js \
+            dist/admin-auth/admin-auth.service.js \
+            dist/admin-auth/google-oidc.js \
             dist/storage/storage.service.js \
             dist/webhooks/verify.js \
             dist/public/index.html \

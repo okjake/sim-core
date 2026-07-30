@@ -90,7 +90,24 @@ describe('built-in routes', () => {
         },
         driver: true,
         docs: false,
+        adminAuth: false,
       });
+    });
+
+    it('carries nothing beyond name, version, brand and two feature flags', async () => {
+      // The exact key set is asserted so that adding anything to this
+      // unauthenticated payload has to be a deliberate act with a test change
+      // attached — see the audit note on AdminBrandController.
+      const res = await request(harness.app.getHttpServer()).get('/__admin/brand').expect(200);
+      expect(Object.keys(res.body).sort()).toEqual([
+        'adminAuth',
+        'brand',
+        'docs',
+        'driver',
+        'name',
+        'version',
+      ]);
+      expect(Object.keys(res.body.brand).sort()).toEqual(['color', 'displayName', 'tagline']);
     });
   });
 

@@ -11,6 +11,8 @@ import {
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ServeStaticModule } from '@nestjs/serve-static';
 
+import { AdminAuthMiddleware } from './admin-auth/admin-auth.middleware';
+import { AdminAuthService } from './admin-auth/admin-auth.service';
 import { AdminBrandController } from './builtins/admin-brand.controller';
 import { resolveAdminDist } from './builtins/admin-static';
 import { HealthController } from './builtins/health.controller';
@@ -98,11 +100,17 @@ export class SimCoreModule implements NestModule {
       ControlService,
       ControlAuthGuard,
       RequestTailMiddleware,
+      // Always provided. With `adminAuth` absent or disabled the service is
+      // inert and the middleware is one boolean check on `/admin` requests, so
+      // the disabled path stays byte-for-byte what v0.2.0 did.
+      AdminAuthService,
+      AdminAuthMiddleware,
       { provide: APP_INTERCEPTOR, useClass: ChaosInterceptor },
     ];
 
     const exports: DynamicModule['exports'] = [
       SIM_CORE_CONFIG,
+      AdminAuthService,
       ChaosService,
       DriverService,
       RequestTailService,
@@ -130,6 +138,14 @@ export class SimCoreModule implements NestModule {
       );
     }
 
+    if (normalized.adminAuth?.enabled) {
+      logger.log(
+        `admin auth enabled (Google OIDC, domain=${normalized.adminAuth.allowedDomain}` +
+          `${normalized.adminAuth.allowedEmails ? `, ${normalized.adminAuth.allowedEmails.length} allow-listed addresses` : ''}) ` +
+          '— /admin only; /docs, /openapi.json, /health and /__control are unaffected',
+      );
+    }
+
     return {
       module: SimCoreModule,
       global: true,
@@ -140,9 +156,18 @@ export class SimCoreModule implements NestModule {
     };
   }
 
+  /**
+   * Both middlewares run for every route and filter by path themselves, rather
+   * than being mounted on `/admin` — the same shape as `isChaosExempt`, and it
+   * keeps the gate's path matching in one testable function instead of split
+   * between a route pattern and a runtime check.
+   *
+   * Order matters: the request tail is first so it records the 302s and 403s
+   * the gate produces.
+   */
   configure(consumer: MiddlewareConsumer): void {
     consumer
-      .apply(RequestTailMiddleware)
+      .apply(RequestTailMiddleware, AdminAuthMiddleware)
       .forRoutes({ path: '*splat', method: RequestMethod.ALL });
   }
 }

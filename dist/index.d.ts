@@ -7,6 +7,12 @@
 export { SimCoreModule } from './sim-core.module';
 export { bootstrapSimService, type BootstrapSimServiceOptions } from './bootstrap';
 export { SIM_CORE_CONFIG, normalizeSimCoreConfig, type SimCoreConfig, type SimBrand, type OpenApiDocument, } from './config';
+export { AdminAuthService, isAdminGatedPath, parseCookieHeader, type CallbackFailure, type CallbackSuccess, } from './admin-auth/admin-auth.service';
+export { AdminAuthMiddleware } from './admin-auth/admin-auth.middleware';
+export { ADMIN_COOKIE_PATH, ADMIN_LOGOUT_PATH, DEFAULT_CALLBACK_PATH, DEFAULT_CLOCK_SKEW_SECONDS, DEFAULT_JWKS_CACHE_TTL_SECONDS, DEFAULT_SESSION_COOKIE_NAME, DEFAULT_SESSION_TTL_HOURS, DEFAULT_STATE_TTL_SECONDS, GOOGLE_AUTHORIZATION_ENDPOINT, GOOGLE_ISSUERS, GOOGLE_JWKS_URI, GOOGLE_TOKEN_ENDPOINT, SESSION_SECRET_MIN_LENGTH, resolveAdminAuthConfig, type ResolvedAdminAuthConfig, } from './admin-auth/admin-auth.config';
+export { GoogleJwksCache, decodeJwt, verifyGoogleIdToken, type VerifyIdTokenOptions, } from './admin-auth/google-oidc';
+export { renderAccessDeniedPage, renderSignedOutPage, type AdminAuthPageModel, } from './admin-auth/admin-auth.render';
+export { AdminAuthError, type AdminAuthConfig, type AdminAuthFailure, type AdminAuthFetch, type AdminSession, type IdTokenClaims, } from './admin-auth/admin-auth.types';
 export { SimStorage, DEFAULT_DATA_DIR, resolveDataDir, resolveDatabaseFile, } from './storage/storage.service';
 export type { AppliedMigration, Migration, SqlDatabase, SqlDatabaseFactory, SqlStatement, StorageOptions, } from './storage/storage.types';
 export { DocsService, contentEtag, type DocsStatus } from './docs/docs.service';

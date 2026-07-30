@@ -1,3 +1,5 @@
+import { resolveAdminAuthConfig } from './admin-auth/admin-auth.config';
+import type { AdminAuthConfig } from './admin-auth/admin-auth.types';
 import type { DocsAuthCheck, DocsConfig } from './docs/docs.types';
 import type { DriverConfig } from './driver/driver.types';
 import type { Scenario } from './scenarios/scenario.types';
@@ -72,6 +74,20 @@ export interface SimCoreConfig {
   docsChaosOptIn?: boolean;
   /** Size of the received-webhook ring buffer behind `GET /__control/webhooks`. Default 50. */
   webhookHistorySize?: number;
+
+  // --- v0.3.0 -----------------------------------------------------------
+
+  /**
+   * Optional Google-OIDC sign-in gate for the admin SPA at `/admin`.
+   *
+   * **Disabled by default, and it gates the human surface only.** Omit it (or
+   * set `enabled: false`) and the service behaves exactly as it did on v0.2.0.
+   * Enabled, it still leaves every machine surface alone: domain routes,
+   * `/docs`, `/openapi.json`, `/health`, webhook receivers and the
+   * bearer-authenticated `/__control` plane keep the auth they already had,
+   * because the platform polls the first three and automation drives the last.
+   */
+  adminAuth?: AdminAuthConfig;
 }
 
 const TOKEN_MIN_LENGTH = 16;
@@ -118,6 +134,11 @@ export function normalizeSimCoreConfig(config: SimCoreConfig): Required<
       );
     }
   }
+  // Throws on an enabled-but-incomplete `adminAuth`. A gate that is half
+  // configured is an admin console open to the internet, so it fails at
+  // bootstrap rather than at the first sign-in attempt. Absent or disabled,
+  // this validates nothing at all — that is what keeps v0.2.0 configs working.
+  resolveAdminAuthConfig(config.adminAuth);
 
   return {
     ...config,

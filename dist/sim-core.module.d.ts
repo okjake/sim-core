@@ -13,5 +13,14 @@ import { type SimCoreConfig } from './config';
  */
 export declare class SimCoreModule implements NestModule {
     static forRoot(config: SimCoreConfig): DynamicModule;
+    /**
+     * Both middlewares run for every route and filter by path themselves, rather
+     * than being mounted on `/admin` — the same shape as `isChaosExempt`, and it
+     * keeps the gate's path matching in one testable function instead of split
+     * between a route pattern and a runtime check.
+     *
+     * Order matters: the request tail is first so it records the 302s and 403s
+     * the gate produces.
+     */
     configure(consumer: MiddlewareConsumer): void;
 }

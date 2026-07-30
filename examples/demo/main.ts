@@ -23,4 +23,30 @@ const config = createDemoConfig({
 });
 config.port = Number(process.env.PORT ?? 3000);
 
+/**
+ * The env wiring every consumer copies verbatim.
+ *
+ * `ADMIN_AUTH_ENABLED` is opt-in and stays off locally: leave it unset and this
+ * is the ungated v0.2.0 service. Turned on, it needs a Google OAuth client
+ * whose authorized redirect URI includes
+ * `http://localhost:${PORT}/admin/auth/callback` — see "Creating the Google
+ * OAuth client" in the README.
+ */
+if (process.env.ADMIN_AUTH_ENABLED === 'true' || process.env.ADMIN_AUTH_ENABLED === '1') {
+  config.adminAuth = {
+    enabled: true,
+    googleClientId: process.env.GOOGLE_CLIENT_ID ?? '',
+    googleClientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
+    allowedDomain: process.env.ADMIN_ALLOWED_DOMAIN ?? 'partnerapi.com',
+    sessionSecret: process.env.ADMIN_SESSION_SECRET ?? '',
+    // Optional, comma-separated. Absent means "anyone in the domain".
+    ...(process.env.ADMIN_ALLOWED_EMAILS
+      ? { allowedEmails: process.env.ADMIN_ALLOWED_EMAILS.split(',').map((e) => e.trim()) }
+      : {}),
+    ...(process.env.ADMIN_SESSION_TTL_HOURS
+      ? { sessionTtlHours: Number(process.env.ADMIN_SESSION_TTL_HOURS) }
+      : {}),
+  };
+}
+
 void bootstrapSimService(AppModule.forConfig(config), config, { rawBody: true });

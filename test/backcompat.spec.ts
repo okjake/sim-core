@@ -3,15 +3,20 @@ import { resolve } from 'node:path';
 import request from 'supertest';
 
 import * as simCore from '../src';
-import { CHAOS_EXEMPT_PREFIXES, isChaosExempt, normalizeSimCoreConfig } from '../src';
+import {
+  CHAOS_EXEMPT_PREFIXES,
+  isChaosExempt,
+  normalizeSimCoreConfig,
+  resolveAdminDist,
+} from '../src';
 import { createDemoConfig } from '../examples/demo/demo.config';
 import { bearer, createHarness, type TestHarness } from './helpers';
 
 /**
- * The contract for consumers repinning `github:okjake/sim-core#v0.1.0` to
- * `#v0.2.0` without opting into anything new.
+ * The contract for consumers repinning `github:okjake/sim-core#v0.1.0` (or
+ * `#v0.2.0`) to a newer tag without opting into anything new.
  *
- * sim-bookbridge and sim-staybase are deployed against v0.1.0 today. If a
+ * sim-bookbridge and sim-staybase are deployed against an older tag today. If a
  * single assertion in this file fails, the upgrade is not backward compatible
  * and the fix belongs in sim-core, not in a consumer.
  */
@@ -218,5 +223,79 @@ describe('backward compatibility with v0.1.0', () => {
         .expect(200);
       await harness.close();
     });
+  });
+});
+
+/**
+ * v0.3.0's only new surface is the `adminAuth` gate, and it is opt-in. This
+ * block is the proof that a consumer repinning to v0.3.0 without adding
+ * `adminAuth` sees no redirect, no cookie, no new route and no new behaviour —
+ * sim-bookbridge in particular runs unattended and would simply stop being
+ * reachable if the gate defaulted on.
+ */
+describe('backward compatibility with v0.2.0 (adminAuth absent)', () => {
+  let harness: TestHarness;
+
+  beforeAll(async () => {
+    harness = await createHarness();
+  });
+
+  afterAll(async () => {
+    await harness.close();
+  });
+
+  const server = (): ReturnType<TestHarness['app']['getHttpServer']> =>
+    harness.app.getHttpServer();
+
+  it('normalises without an adminAuth block', () => {
+    const config = normalizeSimCoreConfig(createDemoConfig());
+    expect(config.adminAuth).toBeUndefined();
+  });
+
+  it('constructs an inert AdminAuthService', () => {
+    const auth = harness.app.get(simCore.AdminAuthService);
+    expect(auth.isEnabled()).toBe(false);
+    expect(() => auth.settings).toThrow(/not enabled/);
+  });
+
+  it('serves /admin with no redirect and sets no cookie', async () => {
+    const res = await request(server()).get('/admin/');
+    expect(res.status).not.toBe(302);
+    expect(res.headers['set-cookie']).toBeUndefined();
+    if (resolveAdminDist()) {
+      expect(res.status).toBe(200);
+      await request(server()).get('/admin/assets/admin.js').expect(200);
+    }
+  });
+
+  it('does not mount the auth routes — they are just unmatched SPA paths', async () => {
+    // ServeStaticModule falls back to index.html for anything under /admin, so
+    // "not mounted" means "answers identically to any other unknown /admin
+    // path", not 404. What matters is that no gate page and no cookie appear.
+    const control = await request(server()).get('/admin/definitely-not-a-route');
+    for (const path of ['/admin/auth/logout', '/admin/auth/callback?code=x&state=y']) {
+      const res = await request(server()).get(path);
+      expect(res.status).toBe(control.status);
+      expect(res.text).toBe(control.text);
+      expect(res.headers['set-cookie']).toBeUndefined();
+      expect(res.text).not.toContain('Signed out');
+      expect(res.text).not.toContain('Access denied');
+    }
+  });
+
+  it('reports adminAuth: false on /__admin/brand', async () => {
+    const res = await request(server()).get('/__admin/brand').expect(200);
+    expect(res.body.adminAuth).toBe(false);
+  });
+
+  it('leaves every other surface exactly where it was', async () => {
+    await request(server()).get('/health').expect(200);
+    await request(server()).get('/openapi.json').expect(200);
+    await request(server()).get('/widgets').expect(200);
+    await request(server()).get('/__control/state').expect(401);
+    await request(server())
+      .get('/__control/state')
+      .set('authorization', bearer(harness.token))
+      .expect(200);
   });
 });

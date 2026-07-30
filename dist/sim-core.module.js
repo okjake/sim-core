@@ -11,6 +11,8 @@ exports.SimCoreModule = void 0;
 const common_1 = require("@nestjs/common");
 const core_1 = require("@nestjs/core");
 const serve_static_1 = require("@nestjs/serve-static");
+const admin_auth_middleware_1 = require("./admin-auth/admin-auth.middleware");
+const admin_auth_service_1 = require("./admin-auth/admin-auth.service");
 const admin_brand_controller_1 = require("./builtins/admin-brand.controller");
 const admin_static_1 = require("./builtins/admin-static");
 const health_controller_1 = require("./builtins/health.controller");
@@ -90,10 +92,16 @@ let SimCoreModule = SimCoreModule_1 = class SimCoreModule {
             control_service_1.ControlService,
             control_guard_1.ControlAuthGuard,
             request_tail_middleware_1.RequestTailMiddleware,
+            // Always provided. With `adminAuth` absent or disabled the service is
+            // inert and the middleware is one boolean check on `/admin` requests, so
+            // the disabled path stays byte-for-byte what v0.2.0 did.
+            admin_auth_service_1.AdminAuthService,
+            admin_auth_middleware_1.AdminAuthMiddleware,
             { provide: core_1.APP_INTERCEPTOR, useClass: chaos_interceptor_1.ChaosInterceptor },
         ];
         const exports = [
             config_1.SIM_CORE_CONFIG,
+            admin_auth_service_1.AdminAuthService,
             chaos_service_1.ChaosService,
             driver_service_1.DriverService,
             request_tail_service_1.RequestTailService,
@@ -114,6 +122,11 @@ let SimCoreModule = SimCoreModule_1 = class SimCoreModule {
             logger.log(`docs engine enabled (authMode=${normalized.docs.authMode ?? 'public'}, ` +
                 `chaosOptIn=${normalized.docsChaosOptIn === true})`);
         }
+        if (normalized.adminAuth?.enabled) {
+            logger.log(`admin auth enabled (Google OIDC, domain=${normalized.adminAuth.allowedDomain}` +
+                `${normalized.adminAuth.allowedEmails ? `, ${normalized.adminAuth.allowedEmails.length} allow-listed addresses` : ''}) ` +
+                '— /admin only; /docs, /openapi.json, /health and /__control are unaffected');
+        }
         return {
             module: SimCoreModule_1,
             global: true,
@@ -123,9 +136,18 @@ let SimCoreModule = SimCoreModule_1 = class SimCoreModule {
             exports,
         };
     }
+    /**
+     * Both middlewares run for every route and filter by path themselves, rather
+     * than being mounted on `/admin` — the same shape as `isChaosExempt`, and it
+     * keeps the gate's path matching in one testable function instead of split
+     * between a route pattern and a runtime check.
+     *
+     * Order matters: the request tail is first so it records the 302s and 403s
+     * the gate produces.
+     */
     configure(consumer) {
         consumer
-            .apply(request_tail_middleware_1.RequestTailMiddleware)
+            .apply(request_tail_middleware_1.RequestTailMiddleware, admin_auth_middleware_1.AdminAuthMiddleware)
             .forRoutes({ path: '*splat', method: common_1.RequestMethod.ALL });
     }
 };

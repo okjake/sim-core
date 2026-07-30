@@ -5,6 +5,12 @@ export interface Brand {
   driver: boolean;
   /** Docs engine enabled? Drives whether the Docs tab is offered at all. */
   docs?: boolean;
+  /**
+   * Google gate in front of /admin? Only drives whether a Sign out link is
+   * shown — if it is false there is no session to end, and the control token
+   * (a separate credential) is cleared by "Forget token".
+   */
+  adminAuth?: boolean;
 }
 
 export interface ScenarioListing {

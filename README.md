@@ -14,6 +14,54 @@ One `SimCoreModule.forRoot(config)` import gives a NestJS service:
 - a **request tail** — in-memory ring buffer of the last 200 requests
 - **v0.2.0** — an opt-in **docs engine** (`/docs`, versioned OpenAPI specs,
   guides, changelog, SQLite-backed) and **webhook verification helpers**
+- **v0.3.0** — an opt-in **Google-OIDC gate** in front of `/admin`, and nothing
+  else (see below)
+
+---
+
+## What changed in v0.3.0
+
+One addition: **`adminAuth`**, an optional Google sign-in gate for the admin
+SPA. It is **off by default** and there is no other change — no rename, no
+route moved, no default altered. A consumer repins the tag, redeploys, and
+gets byte-for-byte its v0.2.0 behaviour;
+`test/backcompat.spec.ts` has a block dedicated to proving exactly that.
+
+| Added | Opt-in? |
+|---|---|
+| `adminAuth` config, the `/admin` gate, `GET /admin/auth/callback`, `GET /admin/auth/logout` | yes — `adminAuth.enabled` |
+| `adminAuth` boolean on `GET /__admin/brand` | no — additive field |
+| A **Sign out** link in the admin SPA header | no — only rendered when the gate is on |
+| Exports: `AdminAuthService`, `verifyGoogleIdToken`, `GoogleJwksCache`, `resolveAdminAuthConfig`, … | no — import when wanted |
+
+### What is gated, and what is deliberately not
+
+**Gated:** the `/admin` SPA, its assets, and every other path under `/admin`.
+
+**Never gated, when the gate is on:**
+
+| Surface | Why |
+|---|---|
+| the consumer's domain API (`/v1`, `/v2`, …) | it is the traffic the fleet exists to generate |
+| `GET /docs`, `GET /docs/*` | the platform's documentation pipeline polls and diffs these |
+| `GET /openapi.json` | the platform HEAD-probes it; a 302 here reads as an upstream that deleted its API |
+| `GET /health` | Render's health check |
+| webhook receivers | the platform signs and POSTs them |
+| `GET /__admin/brand` | display-only, and the SPA shell needs it — see the audit note below |
+| **all of `/__control/*`** | **bearer `CONTROL_TOKEN`, unchanged.** Every piece of fleet automation drives these |
+
+The line is human surface vs machine surface, and it is enforced by tests: the
+whole `machine surfaces are untouched` block in `test/admin-auth.spec.ts` runs
+against an app with the gate **enabled**.
+
+> **`/__admin/brand` audit (done for v0.3.0, not assumed).** The payload is
+> `{ name, version, brand: { displayName, color, tagline }, docs, adminAuth }`.
+> No credentials, no hostnames, no counts, no runtime state; and both booleans
+> are already observable without it (`/docs` answers 200 or 404, the gate
+> announces itself with a 302). It stays open because the SPA needs it before a
+> session exists. `test/builtins.spec.ts` asserts the **exact key set**, so
+> adding a field to this unauthenticated payload fails a test rather than
+> quietly widening the surface.
 
 ---
 
@@ -84,7 +132,7 @@ sim-core is consumed as a pinned git dependency. Add to the consumer's
 ```json
 {
   "dependencies": {
-    "@okjake/sim-core": "github:okjake/sim-core#v0.2.0"
+    "@okjake/sim-core": "github:okjake/sim-core#v0.3.0"
   }
 }
 ```
@@ -266,6 +314,32 @@ interface SimCoreConfig {
   docsAuthCheck?: (req: Request) => boolean;  // credential check for docs.authMode 'required'
   docsChaosOptIn?: boolean;                // let chaos hit /docs + /openapi.json; default false
   webhookHistorySize?: number;             // GET /__control/webhooks ring buffer; default 50
+
+  // --- v0.3.0, optional ---
+  adminAuth?: AdminAuthConfig;             // Google gate for /admin; DISABLED by default
+}
+
+interface AdminAuthConfig {
+  enabled: boolean;                        // master switch; everything below is required when true
+  googleClientId: string;                  // GOOGLE_CLIENT_ID
+  googleClientSecret: string;              // GOOGLE_CLIENT_SECRET — server-side only
+  allowedDomain: string;                   // ADMIN_ALLOWED_DOMAIN, e.g. 'partnerapi.com'
+  allowedEmails?: string[];                // optional narrowing inside the domain
+  sessionSecret: string;                   // ADMIN_SESSION_SECRET, >= 32 chars
+  sessionTtlHours?: number;                // default 12
+  callbackPath?: string;                   // default '/admin/auth/callback'; must be under /admin/
+
+  // escape hatches — test injection and self-hosting knobs, all optional
+  fetchImpl?: AdminAuthFetch;              // token exchange + JWKS; default global fetch
+  publicBaseUrl?: string;                  // override the redirect_uri origin
+  secureCookie?: boolean;                  // override the Secure derivation
+  cookieName?: string;                     // default 'sim_admin_session'
+  stateTtlSeconds?: number;                // default 600
+  jwksCacheTtlSeconds?: number;            // default 3600
+  clockSkewSeconds?: number;               // default 120
+  authorizationEndpoint?: string;          // default https://accounts.google.com/o/oauth2/v2/auth
+  tokenEndpoint?: string;                  // default https://oauth2.googleapis.com/token
+  jwksUri?: string;                        // default https://www.googleapis.com/oauth2/v3/certs
 }
 
 interface DocsConfig {
@@ -295,9 +369,16 @@ function normalizeSimCoreConfig(config: SimCoreConfig): SimCoreConfig; // throws
 `normalizeSimCoreConfig` runs inside `forRoot` and **throws at bootstrap** on:
 a missing `name`; a `controlToken` shorter than 16 characters; an `openapi`
 without `openapi`/`info`; a `driver` without `baseUrl`; a
-`maxRequestsPerMinute` that is not `> 0`; and `docs.authMode: 'required'`
+`maxRequestsPerMinute` that is not `> 0`; `docs.authMode: 'required'`
 without a `docsAuthCheck` (failing closed beats silently serving docs that were
-meant to be credentialed).
+meant to be credentialed); and — new in v0.3.0 — an **`adminAuth` that is
+enabled but incomplete**: a missing client id, client secret or allowed domain,
+a `sessionSecret` under 32 characters, a non-positive `sessionTtlHours`, a
+`callbackPath` outside `/admin/`, or an `allowedEmails` that is empty or not
+made of addresses. All of those fail at boot rather than at the first sign-in,
+because the failure mode of a half-configured gate is an admin console open to
+the internet. An **absent or disabled** `adminAuth` is validated not at all,
+which is what keeps a v0.2.0 config working untouched.
 
 `openapi` stays **required even with docs enabled**. It is the fallback served
 at `/openapi.json` before anything has been published, so a sim always answers
@@ -856,6 +937,155 @@ class WebhookRecorderService {
 Record rejected deliveries too — "did it even arrive?" is the first question
 asked when a signature mismatch is being debugged.
 
+### Admin auth (v0.3.0)
+
+```ts
+class AdminAuthService {
+  isEnabled(): boolean;
+  get settings(): ResolvedAdminAuthConfig;      // throws when disabled
+  authenticate(req: Request, now?: number): AdminSession | null;
+  buildAuthorizationUrl(req: Request, now?: number): string;
+  handleCallback(req: Request, now?: number): Promise<CallbackSuccess | CallbackFailure>;
+  issueSession(email: string, now?: number): AdminSession;
+  serializeSession(session: AdminSession): string;
+  setCookieHeader(req: Request, session: AdminSession): string;
+  clearCookieHeader(req: Request): string;
+  authorizeClaims(claims: IdTokenClaims): string;   // throws AdminAuthError
+  redirectUri(req: Request): string;
+}
+
+// building blocks, usable on their own
+function resolveAdminAuthConfig(raw?: AdminAuthConfig): ResolvedAdminAuthConfig | null;
+function verifyGoogleIdToken(idToken: string, opts: VerifyIdTokenOptions): Promise<IdTokenClaims>;
+function decodeJwt(token: string): { header; claims; signingInput; signature };
+function isAdminGatedPath(path: string): boolean;
+function parseCookieHeader(header?: string): Record<string, string>;
+function renderAccessDeniedPage(model: AdminAuthPageModel): string;
+function renderSignedOutPage(model: AdminAuthPageModel): string;
+class GoogleJwksCache { getKey(kid: string): Promise<KeyObject>; size(): number }
+class AdminAuthError extends Error { reason: AdminAuthFailure }
+```
+
+Turning it on is four lines plus the env:
+
+```ts
+const config: SimCoreConfig = {
+  // …everything you already had…
+  adminAuth: {
+    enabled: process.env.ADMIN_AUTH_ENABLED === 'true',
+    googleClientId: process.env.GOOGLE_CLIENT_ID ?? '',
+    googleClientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
+    allowedDomain: process.env.ADMIN_ALLOWED_DOMAIN ?? 'partnerapi.com',
+    sessionSecret: process.env.ADMIN_SESSION_SECRET ?? '',
+  },
+};
+```
+
+See `examples/demo/main.ts` for the same wiring with the optional variables
+(`ADMIN_ALLOWED_EMAILS`, `ADMIN_SESSION_TTL_HOURS`) included.
+
+#### The flow
+
+1. An unauthenticated `GET /admin…` gets **302** to Google's authorization
+   endpoint with `response_type=code`, `scope=openid email profile`,
+   `hd=<allowedDomain>` (a hint, nothing more), a fresh `nonce`, and a `state`.
+2. `state` is an HMAC-signed `{nonce, issuedAt, returnTo}` valid for 10 minutes,
+   **and** the nonce is recorded server-side and deleted on use. The signature
+   stops tampering, the timestamp stops replay-after-expiry, and the
+   server-side record stops replay *inside* the window — a signed-but-stateless
+   state is reusable for its whole validity period.
+3. The callback exchanges the code **server-side** (this is the only place
+   `googleClientSecret` is used) and verifies the returned `id_token`:
+   RS256 signature against Google's JWKS (cached by `kid`), `iss` ∈
+   `{accounts.google.com, https://accounts.google.com}`, `aud === clientId`,
+   `exp`/`iat` within a 120s skew, and `nonce` matching the one this round trip
+   started with.
+4. Only then are the claims authorised: `hd === allowedDomain` **and** `email`
+   ends with `@allowedDomain` **and** `email_verified`, plus membership of
+   `allowedEmails` when it is set.
+5. Success sets the session cookie and 302s back to the originally requested
+   `/admin…` path. Failure — any failure — renders one identical 403 page.
+
+#### Session cookie
+
+```
+sim_admin_session = base64url(JSON {email, exp}) "." base64url(HMAC-SHA256(payload))
+                    ; Path=/admin ; HttpOnly ; SameSite=Lax ; Max-Age=<ttl> [; Secure]
+```
+
+- The payload is exactly `{ email, exp }` — no id_token passthrough, no roles,
+  no access token. `test/admin-auth.spec.ts` asserts the key set.
+- The HMAC key is **derived** from `sessionSecret`
+  (`HMAC(secret, "sim-core.admin-auth.session")`), and the `state` uses a
+  different derivation. Signing both with the same key would let a value minted
+  for one purpose be presented as the other.
+- **`Secure` is derived from the request** — `req.secure` (which needs
+  `trust proxy`, and `bootstrapSimService` sets it) or `X-Forwarded-Proto`.
+  Render terminates TLS, so the app sees plain HTTP and a hardcoded `Secure`
+  would break local dev with an invisible redirect loop, while hardcoding it
+  off would put the session cookie on the wire in production.
+- Authorisation is **re-checked on every request**, not trusted from issue
+  time. Narrowing `allowedDomain` or `allowedEmails` and redeploying logs the
+  removed people out immediately instead of at the end of their 12 hours.
+- `GET /admin/auth/logout` clears the cookie and renders a signed-out page. It
+  is a client-side clear, not server-side revocation — there is no session
+  store, by design. To evict someone before their TTL, rotate `sessionSecret`.
+
+#### Security notes worth knowing
+
+- **The gate is middleware, not a guard.** `ServeStaticModule` registers plain
+  Express middleware in `onModuleInit`, with no controller — and therefore no
+  guard — in front of it. A `@UseGuards` would leave `/admin/index.html` and
+  `/admin/assets/*` wide open. Nest's own ordering (`registerRouter()` →
+  middleware, then `callInitHook()` → serve-static) is what puts the gate
+  first, and a test asserts that an **asset** 302s so the ordering cannot
+  silently regress.
+- **`hd` alone is not enough.** Both `hd` and the email suffix are required.
+  They normally agree, but they are different assertions and requiring both
+  means one surprising claim shape cannot let an outsider in.
+- **The 403 page never says why.** Wrong domain, unverified address, not on the
+  allowlist, forged signature — all render the same bytes. The reason is logged
+  server-side as a `SimCore:adminAuth` warning.
+- **The JWKS fetch is injectable** (`adminAuth.fetchImpl`, exactly like
+  `driver.fetchImpl`), so the suite and offline dev never reach
+  `googleapis.com`. An unknown `kid` triggers at most one refetch per minute,
+  so a stream of junk tokens cannot turn a sim service into a load generator
+  pointed at Google.
+- **Use a different `sessionSecret` per service.** A shared one makes a session
+  cookie minted by one sim valid on another.
+
+#### Creating the Google OAuth client (operator note)
+
+One OAuth client covers the whole fleet.
+
+1. Google Cloud console → **APIs & Services → Credentials → Create credentials
+   → OAuth client ID**, application type **Web application**.
+2. Under **Authorized redirect URIs**, add one entry per deployed service plus
+   one for local dev. The fleet runs on `partnerapi.cloud` (Render):
+
+   ```
+   https://staybase.partnerapi.cloud/admin/auth/callback
+   https://bookbridge.partnerapi.cloud/admin/auth/callback
+   https://pebblepay.partnerapi.cloud/admin/auth/callback
+   http://localhost:3000/admin/auth/callback
+   ```
+
+   Google matches these **exactly** — scheme, host, port and path, no trailing
+   slash, no wildcards. A service reached on a different hostname (an
+   `onrender.com` default domain, a preview URL, a custom port) needs its own
+   entry or sign-in fails with `redirect_uri_mismatch`. If a service runs on a
+   non-3000 local port, add that port too; `bootstrapSimService` builds the
+   redirect URI from the request's host, or from `adminAuth.publicBaseUrl` when
+   you set it.
+3. **Authorized JavaScript origins** can be left empty — this is a server-side
+   authorization-code flow, not an implicit one.
+4. Copy the client id and secret into `GOOGLE_CLIENT_ID` /
+   `GOOGLE_CLIENT_SECRET` on each Render service (`sync: false`), and give each
+   service its **own** `ADMIN_SESSION_SECRET`.
+5. Nothing needs to be done in the Workspace admin console: the `hd` claim on a
+   Workspace account is enough, and it is the account's own domain that is
+   checked.
+
 ### Conditional requests (v0.2.0)
 
 ```ts
@@ -889,8 +1119,10 @@ single-argument form from v0.1.0 still works).
 |---|---|---|---|
 | GET | `/health` | none | `{ status: 'ok', uptime: number, version: string }` |
 | GET/HEAD | `/openapi.json` | none | `ETag`, `Last-Modified`, `Cache-Control`; 304 on `If-None-Match` or `If-Modified-Since`; `/__control` paths stripped. Serves the active published spec version when docs are enabled, else `config.openapi` |
-| GET | `/admin/*` | none (SPA asks for the token) | static SPA, only when `admin !== false` and `dist/public` exists |
-| GET | `/__admin/brand` | none | display-only `{ name, version, brand, driver, docs }` for the SPA shell |
+| GET | `/admin/*` | **`adminAuth` when enabled**, else none (SPA asks for the control token) | static SPA, only when `admin !== false` and `dist/public` exists |
+| GET | `/admin/auth/callback` | none (validates `state` + `code`) | **v0.3.0, adminAuth only.** OAuth redirect target. 302 + session cookie on success, 403 page otherwise. Path configurable via `callbackPath` |
+| GET | `/admin/auth/logout` | none | **v0.3.0, adminAuth only.** Clears the session cookie, renders a signed-out page. **200** |
+| GET | `/__admin/brand` | none | display-only `{ name, version, brand, driver, docs, adminAuth }` for the SPA shell |
 | GET | `/docs` | `docs.authMode` | **docs only.** Index: active spec label, published guides, changelog link |
 | GET | `/docs/guides/:slug` | `docs.authMode` | **docs only.** 404 (HTML) for a missing or unpublished slug |
 | GET | `/docs/changelog` | `docs.authMode` | **docs only.** Published entries, newest first |
@@ -1007,6 +1239,14 @@ statically by the Nest app.
 Themed with `brand.color`; light and dark. Set `admin: false` in the config to
 skip serving it.
 
+**Two independent credentials, when `adminAuth` is on.** The Google session
+decides whether you may *load* the SPA; the `CONTROL_TOKEN` still decides
+whether it may *call* `/__control`. They are deliberately not merged — the
+control token is what fleet automation uses, and binding it to a browser
+session would break every script. The header shows **Forget token** (clears the
+localStorage control token) and, when the gate is on, **Sign out** (clears the
+Google session cookie via `/admin/auth/logout`).
+
 ---
 
 ## Testing your consumer
@@ -1070,6 +1310,17 @@ services:
         generateValue: true     # or sync: false to paste one in
       - key: WEBHOOK_SECRET
         sync: false             # comes from the platform at registration time
+      # --- v0.3.0 admin gate, optional ---
+      - key: ADMIN_AUTH_ENABLED
+        value: "true"
+      - key: GOOGLE_CLIENT_ID
+        sync: false             # one OAuth client for the whole fleet
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: ADMIN_ALLOWED_DOMAIN
+        value: partnerapi.com
+      - key: ADMIN_SESSION_SECRET
+        generateValue: true     # per service — never shared between them
 ```
 
 **Docs-disabled service** (sim-bookbridge) — no disk, no `DATA_DIR`; state is
@@ -1105,12 +1356,20 @@ caveats above. **Rebuild and commit `dist/` with any change to `src/` or
 `admin/`**, or consumers will install stale code.
 
 Environment: see [`.env.example`](./.env.example) — `CONTROL_TOKEN`, `PORT`,
-`DATA_DIR`, `WEBHOOK_SECRET`. No secrets are ever committed.
+`DATA_DIR`, `WEBHOOK_SECRET`, and the v0.3.0 gate's `ADMIN_AUTH_ENABLED`,
+`GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `ADMIN_ALLOWED_DOMAIN`,
+`ADMIN_SESSION_SECRET` (+ optional `ADMIN_ALLOWED_EMAILS`,
+`ADMIN_SESSION_TTL_HOURS`). No secrets are ever committed.
 
 Test layout: `test/backcompat.spec.ts` is the contract with already-deployed
 consumers — treat a failure there as "the upgrade is not backward compatible",
 not as a test to update. `test/docs.spec.ts` owns the byte-identical rendering
 guarantee; a failure there is a real bug, not flake.
+`test/admin-auth.spec.ts` runs against a fake Google (`test/google-stub.ts` —
+a locally generated RSA keypair serving a stub JWKS and a stub token endpoint,
+injected via `adminAuth.fetchImpl`), so the suite never touches the network.
+Its "machine surfaces are untouched" block runs with the gate **enabled**; a
+failure there means a sim would start 302ing something the platform polls.
 
 ### Releasing
 

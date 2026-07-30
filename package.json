@@ -1,7 +1,7 @@
 {
   "name": "@okjake/sim-core",
-  "version": "0.2.0",
-  "description": "Shared NestJS engine for the synthetic partner-ecosystem sim fleet: chaos layer, scenario registry, seeded traffic driver, SQLite-backed docs engine, webhook verification, __control API and admin SPA.",
+  "version": "0.3.0",
+  "description": "Shared NestJS engine for the synthetic partner-ecosystem sim fleet: chaos layer, scenario registry, seeded traffic driver, SQLite-backed docs engine, webhook verification, __control API and an admin SPA with an optional Google-OIDC gate.",
   "license": "UNLICENSED",
   "private": false,
   "repository": {
