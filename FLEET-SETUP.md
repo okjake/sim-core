@@ -215,6 +215,13 @@ step-by-step** — it has the exact endpoints, request bodies and gotchas for
 each platform flow. Work through it there; the ordering below is what matters
 across repos, and the values you must carry back to Render.
 
+0. **Deploy the staging log pipeline first, if it isn't already live** — the
+   platform's own `ingest.partnerapi.com` only validates against
+   *production's* database, so it 401s a staging fixture tenant's traffic.
+   `infra/staging-log-pipeline` in the main repo (PR #3999) is a minimal
+   ingest + Loki pair that exists specifically to fix that; its readme has
+   the deploy order and env vars. `INGEST_URL` in step 5 below is
+   **`papi-ingest-staging`'s URL, not the production one.**
 1. **Create the fixture tenant** (super-admin `POST /tenants`). Note the tenant
    id and subdomain.
 2. **Mint the tenant token** → this is Staybase's `TENANT_TOKEN`.
@@ -231,9 +238,10 @@ across repos, and the values you must carry back to Render.
    `partnerId` is optional but worth setting: with it, the SDK emits `partnerId`
    as a Loki **stream label**, so one partner's traffic is selectable without a
    `| json` filter.
-5. **Set `TENANT_TOKEN`, `PARTNER_KEYS` and `INGEST_URL`** in Render on
-   sim-staybase and redeploy. Traffic starts flowing into staging within a
-   minute.
+5. **Set `TENANT_TOKEN`, `PARTNER_KEYS` and `INGEST_URL`** (from step 0) in
+   Render on sim-staybase and redeploy. Traffic starts flowing into staging
+   within a minute — but is only *visible* once staging's `apps/management`
+   is also pointed at `papi-loki-staging` for reads (same readme).
 6. **Register webhook endpoints** (platform flows are under `/billing`, per
    Staybase's SETUP.md):
    - tenant-level → `https://staybase.partnerapi.cloud/webhooks/partner-api`
