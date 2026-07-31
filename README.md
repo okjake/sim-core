@@ -16,7 +16,9 @@ One `SimCoreModule.forRoot(config)` import gives a NestJS service:
   guides, changelog, SQLite-backed) and **webhook verification helpers**
 - **v0.3.0** — an opt-in **Google-OIDC gate** in front of `/admin`
 - **v0.4.0** — when that gate is on, its session **also authorizes
-  `/__control`** — one tier for humans instead of two (see below)
+  `/__control`** — one tier for humans instead of two (see below).
+  **v0.4.1** corrects the boot-log line for this (it still said `/__control`
+  was unaffected); no behavior change.
 
 ---
 
@@ -150,7 +152,7 @@ sim-core is consumed as a pinned git dependency. Add to the consumer's
 ```json
 {
   "dependencies": {
-    "@okjake/sim-core": "github:okjake/sim-core#v0.4.0"
+    "@okjake/sim-core": "github:okjake/sim-core#v0.4.1"
   }
 }
 ```

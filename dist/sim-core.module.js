@@ -125,7 +125,8 @@ let SimCoreModule = SimCoreModule_1 = class SimCoreModule {
         if (normalized.adminAuth?.enabled) {
             logger.log(`admin auth enabled (Google OIDC, domain=${normalized.adminAuth.allowedDomain}` +
                 `${normalized.adminAuth.allowedEmails ? `, ${normalized.adminAuth.allowedEmails.length} allow-listed addresses` : ''}) ` +
-                '— /admin only; /docs, /openapi.json, /health and /__control are unaffected');
+                '— gates /admin; its session also authorizes /__control (CONTROL_TOKEN still works too); ' +
+                '/docs, /openapi.json and /health are unaffected');
         }
         return {
             module: SimCoreModule_1,
