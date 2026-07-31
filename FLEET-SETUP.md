@@ -158,8 +158,10 @@ point it at the repo, and it reads that repo's `render.yaml`. Everything marked
 
       Without this the build fails at install with a git auth error — that
       failure mode is the tell if a token wasn't picked up.
-- [ ] Record every `CONTROL_TOKEN` Render generates — you need them to drive
-      scenarios, and they are only shown in the dashboard.
+- [ ] Record every `CONTROL_TOKEN` Render generates — needed for
+      scripted/automated scenario control (curl, CI, the eventual agent
+      pipeline). A human operating the console through a browser doesn't need
+      it: signing in with Google at `/admin` is sufficient on its own.
 
 **Env matrix** — every variable, where it comes from, and the earliest moment it
 can be filled:
@@ -194,10 +196,13 @@ can be filled:
       spec with an `ETag` and `Last-Modified` — this is what the platform's
       spec monitor will poll.
 - [ ] Visit `https://staybase.partnerapi.cloud/admin` in a browser: you should
-      be redirected to Google, and land back on the control panel after signing
-      in with your `@partnerapi.com` account. Enter that service's
-      `CONTROL_TOKEN` when the SPA asks — the gate and the token are separate
-      layers, deliberately.
+      be redirected to Google, and land back on a fully working control panel
+      after signing in with your `@partnerapi.com` account — no token to
+      paste. Since sim-core v0.4.0, the Google session itself authorizes
+      `/__control` as well as loading the page, so anyone on the domain who
+      can sign in can operate the console (activate scenarios, publish spec
+      versions, reset). `CONTROL_TOKEN` still exists and still works — it's
+      what scripts and automation use — but a human never needs it.
 - [ ] Bookbridge is already generating traffic against Staybase; confirm on its
       status page at `https://bookbridge.partnerapi.cloud/`.
 
