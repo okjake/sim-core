@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import request from 'supertest';
 
 import { bearer, createHarness, type TestHarness } from './helpers';
@@ -47,6 +48,61 @@ describe('__control auth', () => {
       .get('/__control/state')
       .set('authorization', `Basic ${harness.token}`)
       .expect(401);
+  });
+
+  /**
+   * A silent 401 here is close to undiagnosable: the admin SPA answers one by
+   * re-authenticating, so the operator sees a reloading page and finds nothing
+   * in the service logs to explain it. The reason has to reach the log.
+   */
+  describe('rejection logging', () => {
+    let warn: jest.SpyInstance;
+
+    beforeEach(() => {
+      warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    });
+
+    afterEach(() => {
+      warn.mockRestore();
+    });
+
+    const warnings = (): string =>
+      warn.mock.calls.map((args) => String(args[0])).join('\n');
+
+    // This harness runs with adminAuth OFF, which is the more useful thing to
+    // report than "you sent no cookie": on a service without the gate, no
+    // browser session can ever authorize /__control, so a missing cookie is a
+    // symptom and the disabled gate is the cause.
+    it('names the disabled gate when no credential was presented', async () => {
+      await request(harness.app.getHttpServer()).get('/__control/state').expect(401);
+      expect(warnings()).toContain('adminAuth is not enabled');
+    });
+
+    it('distinguishes a bad bearer from a missing one', async () => {
+      await request(harness.app.getHttpServer())
+        .get('/__control/state')
+        .set('authorization', bearer('nope-nope-nope-nope-nope'))
+        .expect(401);
+      expect(warnings()).toContain('did not match CONTROL_TOKEN');
+    });
+
+    it('still names the gate when a cookie is sent to an ungated service', async () => {
+      await request(harness.app.getHttpServer())
+        .get('/__control/state')
+        .set('cookie', 'sim_admin_session=whatever')
+        .expect(401);
+      expect(warnings()).toContain('adminAuth is not enabled');
+    });
+
+    it('never logs the presented credential', async () => {
+      await request(harness.app.getHttpServer())
+        .get('/__control/state')
+        .set('authorization', bearer('super-secret-value-do-not-log'))
+        .set('cookie', 'sim_admin_session=cookie-secret-do-not-log')
+        .expect(401);
+      expect(warnings()).not.toContain('super-secret-value-do-not-log');
+      expect(warnings()).not.toContain('cookie-secret-do-not-log');
+    });
   });
 
   it('allows GET /__control/state with the right token', async () => {

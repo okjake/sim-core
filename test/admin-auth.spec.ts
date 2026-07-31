@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import request from 'supertest';
 
 import {
@@ -146,6 +147,11 @@ describe('adminAuth — configuration', () => {
     ['an address in allowedDomain', { allowedDomain: '@partnerapi.com' }, /bare domain/],
     ['a short sessionSecret', { sessionSecret: 'too-short' }, /sessionSecret/],
     ['a zero sessionTtlHours', { sessionTtlHours: 0 }, /sessionTtlHours/],
+    // Positive but far too short. Honouring this issues a cookie that expires
+    // between requests, which presents as an admin console reloading forever
+    // rather than as a configuration mistake — so it is rejected at bootstrap
+    // like any other nonsensical value.
+    ['a sub-minute sessionTtlHours', { sessionTtlHours: 0.001 }, /at least/],
     ['a callbackPath outside /admin', { callbackPath: '/auth/cb' }, /callbackPath/],
     ['an empty allowedEmails', { allowedEmails: [] }, /allowedEmails/],
     ['a non-address in allowedEmails', { allowedEmails: ['jake'] }, /allowedEmails/],
@@ -159,6 +165,52 @@ describe('adminAuth — configuration', () => {
     expect(ctx.auth.settings.callbackPath).toBe(DEFAULT_CALLBACK_PATH);
     expect(ctx.auth.settings.cookieName).toBe(DEFAULT_SESSION_COOKIE_NAME);
     await ctx.harness.close();
+  });
+});
+
+/**
+ * With the gate ON, a `/__control` 401 is the confusing one: the operator has
+ * signed in, `/admin` works, and the SPA answers the 401 by silently
+ * re-authenticating. The log line is the only thing that separates "your
+ * session lapsed" from "this session will never be accepted".
+ */
+describe('adminAuth — why /__control refused a gated request', () => {
+  let ctx: GatedHarness;
+  let warn: jest.SpyInstance;
+
+  beforeAll(async () => {
+    ctx = await createGatedHarness();
+  });
+  afterAll(async () => {
+    await ctx.harness.close();
+  });
+
+  beforeEach(() => {
+    warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+  });
+  afterEach(() => {
+    warn.mockRestore();
+  });
+
+  const warnings = (): string => warn.mock.calls.map((args) => String(args[0])).join('\n');
+
+  it('distinguishes "no cookie sent" from "cookie rejected"', async () => {
+    await request(server(ctx.harness)).get('/__control/state').expect(401);
+    expect(warnings()).toContain('no bearer token and no cookie was sent at all');
+  });
+
+  it('says the session cookie was not accepted, and lists what would cause that', async () => {
+    await request(server(ctx.harness))
+      .get('/__control/state')
+      .set('cookie', 'sim_admin_session=forged.nonsense')
+      .expect(401);
+
+    const logged = warnings();
+    expect(logged).toContain('session cookie was not accepted');
+    // The three real causes, so the reader does not have to guess which.
+    expect(logged).toContain('ADMIN_SESSION_SECRET');
+    expect(logged).toContain('allowedDomain');
+    expect(logged).not.toContain('forged.nonsense');
   });
 });
 

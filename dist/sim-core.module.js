@@ -123,8 +123,14 @@ let SimCoreModule = SimCoreModule_1 = class SimCoreModule {
                 `chaosOptIn=${normalized.docsChaosOptIn === true})`);
         }
         if (normalized.adminAuth?.enabled) {
+            // The session TTL is in here because it is the one setting whose
+            // misconfiguration is invisible from the outside: too short, and the
+            // console reloads forever with no error. Printing the resolved value
+            // makes "how long is a session meant to last here" answerable from the
+            // logs instead of by reading env vars across services.
             logger.log(`admin auth enabled (Google OIDC, domain=${normalized.adminAuth.allowedDomain}` +
-                `${normalized.adminAuth.allowedEmails ? `, ${normalized.adminAuth.allowedEmails.length} allow-listed addresses` : ''}) ` +
+                `${normalized.adminAuth.allowedEmails ? `, ${normalized.adminAuth.allowedEmails.length} allow-listed addresses` : ''}` +
+                `, session TTL ${normalized.adminAuth.sessionTtlHours}h) ` +
                 '— gates /admin; its session also authorizes /__control (CONTROL_TOKEN still works too); ' +
                 '/docs, /openapi.json and /health are unaffected');
         }

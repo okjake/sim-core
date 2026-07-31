@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SESSION_SECRET_MIN_LENGTH = exports.DEFAULT_CLOCK_SKEW_SECONDS = exports.DEFAULT_JWKS_CACHE_TTL_SECONDS = exports.DEFAULT_STATE_TTL_SECONDS = exports.DEFAULT_SESSION_TTL_HOURS = exports.ADMIN_COOKIE_PATH = exports.DEFAULT_SESSION_COOKIE_NAME = exports.ADMIN_LOGOUT_PATH = exports.DEFAULT_CALLBACK_PATH = exports.GOOGLE_ISSUERS = exports.GOOGLE_JWKS_URI = exports.GOOGLE_TOKEN_ENDPOINT = exports.GOOGLE_AUTHORIZATION_ENDPOINT = void 0;
+exports.SESSION_SECRET_MIN_LENGTH = exports.DEFAULT_CLOCK_SKEW_SECONDS = exports.DEFAULT_JWKS_CACHE_TTL_SECONDS = exports.DEFAULT_STATE_TTL_SECONDS = exports.MIN_SESSION_TTL_HOURS = exports.DEFAULT_SESSION_TTL_HOURS = exports.ADMIN_COOKIE_PATH = exports.DEFAULT_SESSION_COOKIE_NAME = exports.ADMIN_LOGOUT_PATH = exports.DEFAULT_CALLBACK_PATH = exports.GOOGLE_ISSUERS = exports.GOOGLE_JWKS_URI = exports.GOOGLE_TOKEN_ENDPOINT = exports.GOOGLE_AUTHORIZATION_ENDPOINT = void 0;
 exports.resolveAdminAuthConfig = resolveAdminAuthConfig;
 /** Google's OIDC endpoints. Overridable per config, only ever for tests. */
 exports.GOOGLE_AUTHORIZATION_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
@@ -22,6 +22,17 @@ exports.DEFAULT_SESSION_COOKIE_NAME = 'sim_admin_session';
  */
 exports.ADMIN_COOKIE_PATH = '/';
 exports.DEFAULT_SESSION_TTL_HOURS = 12;
+/**
+ * A TTL below this is rejected rather than honoured.
+ *
+ * `> 0` alone is not a useful check: a session lasting seconds passes it, and
+ * the failure it produces looks nothing like a configuration error. The cookie
+ * is issued, works for one request, then expires — so the SPA re-authenticates,
+ * succeeds, expires again, and the operator sees a page that reloads forever
+ * with no error anywhere. Six minutes is far below any sane setting and far
+ * above the range where that behaviour is possible.
+ */
+exports.MIN_SESSION_TTL_HOURS = 0.1;
 exports.DEFAULT_STATE_TTL_SECONDS = 600;
 exports.DEFAULT_JWKS_CACHE_TTL_SECONDS = 3600;
 exports.DEFAULT_CLOCK_SKEW_SECONDS = 120;
@@ -60,6 +71,11 @@ function resolveAdminAuthConfig(raw) {
     const ttlHours = raw.sessionTtlHours ?? exports.DEFAULT_SESSION_TTL_HOURS;
     if (!(ttlHours > 0) || !Number.isFinite(ttlHours)) {
         fail('sessionTtlHours must be a positive number of hours');
+    }
+    if (ttlHours < exports.MIN_SESSION_TTL_HOURS) {
+        fail(`sessionTtlHours must be at least ${exports.MIN_SESSION_TTL_HOURS} hours ` +
+            `(got ${ttlHours}) — a session this short expires between requests and ` +
+            'presents as an admin console that reloads endlessly, not as a config error');
     }
     const callbackPath = raw.callbackPath ?? exports.DEFAULT_CALLBACK_PATH;
     if (!callbackPath.startsWith('/admin/')) {
