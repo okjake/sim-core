@@ -270,7 +270,8 @@ describe('adminAuth — the callback', () => {
     expect(setCookie).toContain(`${DEFAULT_SESSION_COOKIE_NAME}=`);
     expect(setCookie).toContain('HttpOnly');
     expect(setCookie).toContain('SameSite=Lax');
-    expect(setCookie).toContain('Path=/admin');
+    // Path=/, not /admin — the session also has to reach /__control.
+    expect(setCookie).toContain('Path=/;');
     expect(setCookie).toMatch(/Max-Age=4\d{4}/); // 12h, minus a second or two
 
     const cookie = cookieValue(res.headers['set-cookie']);
@@ -537,7 +538,7 @@ describe('adminAuth — logout', () => {
     const cleared = (res.headers['set-cookie'] as unknown as string[])[0] as string;
     expect(cleared).toContain(`${DEFAULT_SESSION_COOKIE_NAME}=;`);
     expect(cleared).toContain('Max-Age=0');
-    expect(cleared).toContain('Path=/admin');
+    expect(cleared).toContain('Path=/;');
     expect(res.text).toContain('Signed out');
 
     // The browser would drop it; prove the server also refuses the old value
@@ -573,7 +574,7 @@ describe('adminAuth — machine surfaces are untouched', () => {
     }
   });
 
-  it('leaves the /__control plane on bearer auth alone', async () => {
+  it('the /__control plane still takes bearer auth, unmodified by the gate', async () => {
     await request(server(ctx.harness))
       .get('/__control/state')
       .set('authorization', bearer(ctx.harness.token))
@@ -623,6 +624,151 @@ describe('adminAuth — machine surfaces are untouched', () => {
     const res = await request(server(hookHarness)).post('/webhooks/platform').send({});
     expect(res.status).not.toBe(302);
     await hookHarness.close();
+  });
+});
+
+/**
+ * v0.4.0: the session cookie is a second, independent way to satisfy
+ * `ControlAuthGuard` — not a replacement for `CONTROL_TOKEN`, an addition to
+ * it. There is no longer a "can view /admin" vs. "can operate the service"
+ * distinction for humans: signing in with Google is sufficient for both.
+ */
+describe('adminAuth — the session also authorizes /__control', () => {
+  it('a signed-in cookie, with no bearer header at all, is accepted', async () => {
+    const ctx = await createGatedHarness();
+    const { cookie } = await signIn(ctx);
+
+    await request(server(ctx.harness)).get('/__control/state').set('cookie', cookie).expect(200);
+    await request(server(ctx.harness))
+      .post('/__control/reset')
+      .set('cookie', cookie)
+      .expect(201);
+    await request(server(ctx.harness))
+      .get('/__control/scenarios')
+      .set('cookie', cookie)
+      .expect(200);
+    await request(server(ctx.harness))
+      .get('/__control/webhooks')
+      .set('cookie', cookie)
+      .expect(200);
+
+    await ctx.harness.close();
+  });
+
+  it('covers the docs sub-routes too', async () => {
+    const stub = createGoogleStub({ keys: [signingKey] });
+    const harness = await createHarness({ docs: true, adminAuth: { fetchImpl: stub.fetchImpl } });
+    const ctx: GatedHarness = { harness, stub, auth: harness.app.get(AdminAuthService) };
+    const { cookie } = await signIn(ctx);
+
+    await request(server(harness))
+      .get('/__control/docs/spec-versions')
+      .set('cookie', cookie)
+      .expect(200);
+    await request(server(harness))
+      .post('/__control/docs/preview')
+      .set('cookie', cookie)
+      .send({ markdown: '# hi' })
+      .expect(200);
+
+    await harness.close();
+  });
+
+  it('both credentials remain simultaneously valid — a script is not broken by turning this on', async () => {
+    const ctx = await createGatedHarness();
+    const { cookie } = await signIn(ctx);
+
+    // Bearer, no cookie:
+    await request(server(ctx.harness))
+      .get('/__control/state')
+      .set('authorization', bearer(ctx.harness.token))
+      .expect(200);
+    // Cookie, no bearer:
+    await request(server(ctx.harness)).get('/__control/state').set('cookie', cookie).expect(200);
+    // Neither:
+    await request(server(ctx.harness)).get('/__control/state').expect(401);
+
+    await ctx.harness.close();
+  });
+
+  it('an invalid Authorization header does not block a valid session from being tried', async () => {
+    const ctx = await createGatedHarness();
+    const { cookie } = await signIn(ctx);
+
+    await request(server(ctx.harness))
+      .get('/__control/state')
+      .set('authorization', 'Bearer this-is-not-the-token')
+      .set('cookie', cookie)
+      .expect(200);
+
+    await ctx.harness.close();
+  });
+
+  it('rejects an expired session with no bearer fallback', async () => {
+    const ctx = await createGatedHarness();
+    const { cookie } = await signIn(ctx, validClaims());
+    // Age the cookie past its TTL by forging one signed for a moment already
+    // 13 hours in the past, using the service's own signing — reuse `auth`
+    // rather than hand-rolling a second signer.
+    const expired = ctx.auth.serializeSession({
+      email: 'jake@partnerapi.com',
+      exp: Math.floor(Date.now() / 1000) - 1,
+    });
+    void cookie; // the fresh cookie is not what's under test here
+
+    await request(server(ctx.harness))
+      .get('/__control/state')
+      .set('cookie', `${DEFAULT_SESSION_COOKIE_NAME}=${expired}`)
+      .expect(401);
+
+    await ctx.harness.close();
+  });
+
+  it('rejects a tampered session cookie', async () => {
+    const ctx = await createGatedHarness();
+    const { cookie } = await signIn(ctx);
+    const tampered = cookie.slice(0, -4) + 'aaaa';
+
+    await request(server(ctx.harness))
+      .get('/__control/state')
+      .set('cookie', tampered)
+      .expect(401);
+
+    await ctx.harness.close();
+  });
+
+  it('never falls back to the session when adminAuth is disabled — bearer-only, exactly as v0.1–v0.3', async () => {
+    const harness = await createHarness();
+    // A cookie of the right NAME, sent by a client that has no idea the gate
+    // is off, must not be treated as a credential — there is no session
+    // concept at all in this mode.
+    await request(server(harness))
+      .get('/__control/state')
+      .set('cookie', `${DEFAULT_SESSION_COOKIE_NAME}=whatever`)
+      .expect(401);
+    await request(server(harness))
+      .get('/__control/state')
+      .set('authorization', bearer(harness.token))
+      .expect(200);
+
+    await harness.close();
+  });
+
+  it('sets the cookie with Path=/, not Path=/admin, so the browser sends it to /__control', async () => {
+    const ctx = await createGatedHarness();
+    const state = await startLogin(ctx.harness);
+    ctx.stub.idToken = signIdToken({
+      key: signingKey,
+      claims: { ...validClaims(), nonce: lastNonce() },
+    });
+    const res = await request(server(ctx.harness))
+      .get(`${DEFAULT_CALLBACK_PATH}?code=stub-code&state=${encodeURIComponent(state)}`)
+      .expect(302);
+    const setCookie = (res.headers['set-cookie'] as unknown as string[])[0] as string;
+    expect(setCookie).toContain('Path=/;');
+    expect(setCookie).not.toContain('Path=/admin');
+
+    await ctx.harness.close();
   });
 });
 

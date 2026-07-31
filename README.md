@@ -14,10 +14,28 @@ One `SimCoreModule.forRoot(config)` import gives a NestJS service:
 - a **request tail** — in-memory ring buffer of the last 200 requests
 - **v0.2.0** — an opt-in **docs engine** (`/docs`, versioned OpenAPI specs,
   guides, changelog, SQLite-backed) and **webhook verification helpers**
-- **v0.3.0** — an opt-in **Google-OIDC gate** in front of `/admin`, and nothing
-  else (see below)
+- **v0.3.0** — an opt-in **Google-OIDC gate** in front of `/admin`
+- **v0.4.0** — when that gate is on, its session **also authorizes
+  `/__control`** — one tier for humans instead of two (see below)
 
 ---
+
+## What changed in v0.4.0
+
+One change, and only when `adminAuth` is enabled: `ControlAuthGuard` now
+accepts a valid `adminAuth` session cookie as an alternative to
+`Authorization: Bearer ${CONTROL_TOKEN}` — not a replacement for it, either
+credential works, and automation using the bearer token is unaffected.
+Previously, signing in with Google only unlocked *viewing* `/admin`; operating
+it — activating a scenario, publishing a spec version, resetting — still
+required pasting `CONTROL_TOKEN` into the SPA, found only in Render's
+dashboard. That second tier is gone: anyone who can sign in can now do both.
+
+This is a deliberate security-model change, not a bug fix — see
+["One tier for humans"](#admin-spa-admin) below for the CSRF reasoning and why
+the session cookie's `Path` moved from `/admin` to `/`. When `adminAuth` is
+off or absent, nothing changed: `test/backcompat.spec.ts` still proves
+byte-for-byte v0.1.0–v0.3.0 behaviour.
 
 ## What changed in v0.3.0
 
@@ -132,7 +150,7 @@ sim-core is consumed as a pinned git dependency. Add to the consumer's
 ```json
 {
   "dependencies": {
-    "@okjake/sim-core": "github:okjake/sim-core#v0.3.0"
+    "@okjake/sim-core": "github:okjake/sim-core#v0.4.0"
   }
 }
 ```
@@ -937,7 +955,7 @@ class WebhookRecorderService {
 Record rejected deliveries too — "did it even arrive?" is the first question
 asked when a signature mismatch is being debugged.
 
-### Admin auth (v0.3.0)
+### Admin auth (v0.3.0; `/__control` acceptance added in v0.4.0)
 
 ```ts
 class AdminAuthService {
@@ -1239,13 +1257,30 @@ statically by the Nest app.
 Themed with `brand.color`; light and dark. Set `admin: false` in the config to
 skip serving it.
 
-**Two independent credentials, when `adminAuth` is on.** The Google session
-decides whether you may *load* the SPA; the `CONTROL_TOKEN` still decides
-whether it may *call* `/__control`. They are deliberately not merged — the
-control token is what fleet automation uses, and binding it to a browser
-session would break every script. The header shows **Forget token** (clears the
-localStorage control token) and, when the gate is on, **Sign out** (clears the
-Google session cookie via `/admin/auth/logout`).
+**One tier for humans, when `adminAuth` is on (v0.4.0+).** Signing in with
+Google is sufficient to operate the console — `ControlAuthGuard` accepts the
+`adminAuth` session cookie as an alternative to `CONTROL_TOKEN`, not a
+replacement for it, so nothing pasted, nothing to find in a dashboard. There
+is no longer a separate "can view" vs. "can mutate" tier: anyone who can sign
+in can activate a scenario, publish a spec version, or reset the service.
+`CONTROL_TOKEN` keeps working unmodified for everything that isn't a browser —
+scripts, CI, curl, the eventual agent pipeline — none of which can carry a
+cookie. The header shows **Sign out** when the gate is on (ends the Google
+session via `/admin/auth/logout`) and **Forget token** only when a real token
+is stored in `localStorage` (a holdover from before `adminAuth` was enabled,
+or from a deployment that never turns it on).
+
+CSRF is not a new concern this introduces: every mutating `/__control` route
+is POST/PUT/PATCH/DELETE, the cookie is `SameSite=Lax`, and Lax cookies are
+withheld from cross-site requests for every method except a top-level *GET*
+navigation — which none of these routes accept. A foreign page's `fetch`,
+`XHR`, or `<form>` POST to this origin carries no cookie at all.
+
+Widening the gate this way widens the cookie's `Path` too: it is `/`, not
+`/admin`, so the browser sends it to `/__control` as well. Nothing else on the
+origin reads cookies — the domain API, `/docs`, and the webhook receivers all
+use their own bearer, API-key, or signature schemes — so this is inert
+everywhere else.
 
 ---
 

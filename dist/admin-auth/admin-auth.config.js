@@ -12,8 +12,15 @@ exports.DEFAULT_CALLBACK_PATH = '/admin/auth/callback';
 /** Fixed, not configurable — the SPA links to it and it clears one named cookie. */
 exports.ADMIN_LOGOUT_PATH = '/admin/auth/logout';
 exports.DEFAULT_SESSION_COOKIE_NAME = 'sim_admin_session';
-/** The cookie is scoped to the gated surface and nothing else. */
-exports.ADMIN_COOKIE_PATH = '/admin';
+/**
+ * `Path=/` — not `/admin`. The session also authorizes `/__control/*`
+ * (`ControlAuthGuard` accepts either `CONTROL_TOKEN` or this cookie), so the
+ * browser has to send it there too. Nothing else on the origin reads cookies:
+ * the domain API, `/docs` and the webhook receivers all use their own bearer,
+ * API-key or signature schemes, so a cookie riding along on those requests is
+ * inert.
+ */
+exports.ADMIN_COOKIE_PATH = '/';
 exports.DEFAULT_SESSION_TTL_HOURS = 12;
 exports.DEFAULT_STATE_TTL_SECONDS = 600;
 exports.DEFAULT_JWKS_CACHE_TTL_SECONDS = 3600;

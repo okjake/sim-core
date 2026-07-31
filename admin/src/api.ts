@@ -6,9 +6,10 @@ export interface Brand {
   /** Docs engine enabled? Drives whether the Docs tab is offered at all. */
   docs?: boolean;
   /**
-   * Google gate in front of /admin? Only drives whether a Sign out link is
-   * shown — if it is false there is no session to end, and the control token
-   * (a separate credential) is cleared by "Forget token".
+   * Google gate in front of /admin? When true, the session cookie from
+   * signing in ALSO authorizes /__control/* — there is no separate token to
+   * paste, "Sign out" is the only way out, and every `call()` below omits the
+   * bearer header entirely, relying on the browser sending the cookie.
    */
   adminAuth?: boolean;
 }
@@ -141,6 +142,14 @@ export class ApiError extends Error {
 
 const CONTROL_BASE = '/__control';
 
+/**
+ * `token` is `''` in session mode (`adminAuth` on, nothing pasted): the
+ * bearer header is omitted entirely and the request relies on the browser
+ * sending the `adminAuth` cookie, which `ControlAuthGuard` accepts as an
+ * alternative to `CONTROL_TOKEN`. `credentials: 'same-origin'` is `fetch`'s
+ * default for a relative URL — set explicitly so that stays true regardless
+ * of anything else on the page.
+ */
 async function call<T>(
   token: string,
   path: string,
@@ -148,8 +157,9 @@ async function call<T>(
 ): Promise<T> {
   const res: Response = await fetch(`${CONTROL_BASE}${path}`, {
     method: init.method ?? 'GET',
+    credentials: 'same-origin',
     headers: {
-      authorization: `Bearer ${token}`,
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
       ...(init.body !== undefined ? { 'content-type': 'application/json' } : {}),
     },
     body: init.body !== undefined ? JSON.stringify(init.body) : undefined,

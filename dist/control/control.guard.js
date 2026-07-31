@@ -16,6 +16,7 @@ exports.ControlAuthGuard = void 0;
 const common_1 = require("@nestjs/common");
 const node_crypto_1 = require("node:crypto");
 const config_1 = require("../config");
+const admin_auth_service_1 = require("../admin-auth/admin-auth.service");
 function safeEqual(a, b) {
     const bufA = Buffer.from(a, 'utf8');
     const bufB = Buffer.from(b, 'utf8');
@@ -26,29 +27,59 @@ function safeEqual(a, b) {
     }
     return (0, node_crypto_1.timingSafeEqual)(bufA, bufB);
 }
-/** `Authorization: Bearer ${CONTROL_TOKEN}` on every `/__control/*` route. 401 otherwise. */
+/**
+ * Authorizes every `/__control/*` route on EITHER of two credentials:
+ *
+ * 1. `Authorization: Bearer ${CONTROL_TOKEN}` — unchanged, and the only
+ *    option when `adminAuth` is off or absent. This is what every piece of
+ *    fleet automation (scripts, CI, the eventual agent pipeline) uses; none
+ *    of it can carry a browser cookie.
+ * 2. A valid `adminAuth` session cookie — checked only when `adminAuth` is
+ *    enabled on this service. Signing in with Google is, by design, now
+ *    sufficient to operate the control plane: there is no longer a second
+ *    "can view" vs. "can mutate" tier for humans. Re-tightening
+ *    `allowedDomain` or `allowedEmails` and redeploying revokes this
+ *    immediately, the same as it already does for `/admin` itself
+ *    ({@link AdminAuthService.authenticate}).
+ *
+ * CSRF is not a new concern this introduces: every mutating route here is
+ * POST/PUT/PATCH/DELETE, the cookie is `SameSite=Lax`, and Lax cookies are
+ * withheld from cross-site requests for every method except a top-level *GET*
+ * navigation (a clicked link) — which none of these routes accept anyway. A
+ * foreign page's `fetch`, `XHR`, or `<form>` POST to this origin carries no
+ * cookie at all under Lax.
+ */
 let ControlAuthGuard = class ControlAuthGuard {
     config;
-    constructor(config) {
+    adminAuth;
+    constructor(config, adminAuth) {
         this.config = config;
+        this.adminAuth = adminAuth;
     }
     canActivate(context) {
         const req = context.switchToHttp().getRequest();
+        if (this.bearerMatches(req)) {
+            return true;
+        }
+        if (this.adminAuth?.isEnabled() && this.adminAuth.authenticate(req)) {
+            return true;
+        }
+        throw new common_1.UnauthorizedException('Missing or invalid control credentials');
+    }
+    bearerMatches(req) {
         const header = req.headers.authorization ?? '';
         const [scheme, ...rest] = header.split(' ');
         const token = rest.join(' ').trim();
         if (!scheme || scheme.toLowerCase() !== 'bearer' || token.length === 0) {
-            throw new common_1.UnauthorizedException('Missing control bearer token');
+            return false;
         }
-        if (!safeEqual(token, this.config.controlToken)) {
-            throw new common_1.UnauthorizedException('Invalid control bearer token');
-        }
-        return true;
+        return safeEqual(token, this.config.controlToken);
     }
 };
 exports.ControlAuthGuard = ControlAuthGuard;
 exports.ControlAuthGuard = ControlAuthGuard = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, common_1.Inject)(config_1.SIM_CORE_CONFIG)),
-    __metadata("design:paramtypes", [Object])
+    __param(1, (0, common_1.Optional)()),
+    __metadata("design:paramtypes", [Object, admin_auth_service_1.AdminAuthService])
 ], ControlAuthGuard);

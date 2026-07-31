@@ -383,13 +383,30 @@ function TailPanel({ entries }: { entries: RequestTailEntry[] }): ReactElement {
 
 export default function App(): ReactElement {
   const brand = useBrand();
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem(TOKEN_KEY));
+  const [storedToken, setStoredToken] = useState<string | null>(() =>
+    localStorage.getItem(TOKEN_KEY),
+  );
   const [state, setState] = useState<ControlState | null>(null);
   const [scenarios, setScenarios] = useState<ScenarioListing[]>([]);
   const [tail, setTail] = useState<RequestTailEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('control');
   const docsEnabled = brand?.docs === true;
+
+  /**
+   * `null` — not authorized, show `TokenGate`.
+   * `''`  — session mode: `adminAuth` is on and no token is stored, so every
+   *         `/__control/*` call omits the bearer header and rides on the
+   *         cookie the browser already has from signing in with Google.
+   * else  — a real pasted `CONTROL_TOKEN`, sent as a bearer regardless of
+   *         `adminAuth` (a stored token from before the gate was turned on
+   *         keeps working exactly as it always did).
+   */
+  const token = storedToken ?? (brand?.adminAuth ? '' : null);
+  // `token` is `''` in session mode, which is falsy — every check below has
+  // to compare against `null` explicitly, not just truth-test `token`.
+  const authed = token !== null;
+  const sessionMode = token === '' && brand?.adminAuth === true;
 
   useEffect(() => {
     if (brand) {
@@ -399,7 +416,7 @@ export default function App(): ReactElement {
   }, [brand]);
 
   const refresh = useCallback(async () => {
-    if (!token) return;
+    if (token === null) return;
     try {
       const [nextState, nextTail] = await Promise.all([
         api.state(token),
@@ -410,17 +427,24 @@ export default function App(): ReactElement {
       setError(null);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
+        if (sessionMode) {
+          // The session expired or was revoked — there is no token to forget,
+          // just a fresh trip through Google. A full navigation (not a fetch)
+          // is required so AdminAuthMiddleware sees it and issues the 302.
+          window.location.href = '/admin';
+          return;
+        }
         localStorage.removeItem(TOKEN_KEY);
-        setToken(null);
+        setStoredToken(null);
         setError('That control token was rejected.');
         return;
       }
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [token]);
+  }, [token, sessionMode]);
 
   useEffect(() => {
-    if (!token) return undefined;
+    if (token === null) return undefined;
     void refresh();
     api.scenarios(token).then(setScenarios).catch(() => undefined);
     const id = window.setInterval(() => void refresh(), POLL_MS);
@@ -429,17 +453,17 @@ export default function App(): ReactElement {
 
   const saveToken = (value: string): void => {
     localStorage.setItem(TOKEN_KEY, value);
-    setToken(value);
+    setStoredToken(value);
   };
 
   const signOut = (): void => {
     localStorage.removeItem(TOKEN_KEY);
-    setToken(null);
+    setStoredToken(null);
     setState(null);
   };
 
   const reset = async (): Promise<void> => {
-    if (!token) return;
+    if (token === null) return;
     try {
       await api.reset(token);
       await refresh();
@@ -457,15 +481,17 @@ export default function App(): ReactElement {
         </h1>
         {brand?.brand.tagline ? <span className="tagline">{brand.brand.tagline}</span> : null}
         <span className="spacer" />
-        {token ? (
-          <>
-            <button className="ghost" type="button" onClick={() => void reset()}>
-              Reset to baseline
-            </button>
-            <button className="ghost" type="button" onClick={signOut}>
-              Forget token
-            </button>
-          </>
+        {authed ? (
+          <button className="ghost" type="button" onClick={() => void reset()}>
+            Reset to baseline
+          </button>
+        ) : null}
+        {/* A real pasted token, session or not — nothing to "forget" once the
+            only credential in play is the Google session. */}
+        {storedToken ? (
+          <button className="ghost" type="button" onClick={signOut}>
+            Forget token
+          </button>
         ) : null}
         {brand?.adminAuth ? (
           <a className="as-button" href="/admin/auth/logout">
@@ -474,10 +500,10 @@ export default function App(): ReactElement {
         ) : null}
       </header>
 
-      {!token ? <TokenGate onSubmit={saveToken} /> : null}
+      {token === null ? <TokenGate onSubmit={saveToken} /> : null}
       {error ? <p className="error">{error}</p> : null}
 
-      {token && docsEnabled ? (
+      {token !== null && docsEnabled ? (
         <div className="tabs">
           <button
             type="button"
@@ -496,7 +522,7 @@ export default function App(): ReactElement {
         </div>
       ) : null}
 
-      {token && state && (tab === 'control' || !docsEnabled) ? (
+      {token !== null && state && (tab === 'control' || !docsEnabled) ? (
         <div className="grid">
           <StatePanel state={state} />
           <ScenarioPanel token={token} scenarios={scenarios} onChanged={() => void refresh()} />
@@ -505,7 +531,7 @@ export default function App(): ReactElement {
         </div>
       ) : null}
 
-      {token && docsEnabled && tab === 'docs' ? (
+      {token !== null && docsEnabled && tab === 'docs' ? (
         <div className="grid">
           <DocsPanel token={token} />
         </div>
