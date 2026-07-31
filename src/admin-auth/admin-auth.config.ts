@@ -23,6 +23,17 @@ export const DEFAULT_SESSION_COOKIE_NAME = 'sim_admin_session';
 export const ADMIN_COOKIE_PATH = '/';
 
 export const DEFAULT_SESSION_TTL_HOURS = 12;
+/**
+ * A TTL below this is rejected rather than honoured.
+ *
+ * `> 0` alone is not a useful check: a session lasting seconds passes it, and
+ * the failure it produces looks nothing like a configuration error. The cookie
+ * is issued, works for one request, then expires — so the SPA re-authenticates,
+ * succeeds, expires again, and the operator sees a page that reloads forever
+ * with no error anywhere. Six minutes is far below any sane setting and far
+ * above the range where that behaviour is possible.
+ */
+export const MIN_SESSION_TTL_HOURS = 0.1;
 export const DEFAULT_STATE_TTL_SECONDS = 600;
 export const DEFAULT_JWKS_CACHE_TTL_SECONDS = 3600;
 export const DEFAULT_CLOCK_SKEW_SECONDS = 120;
@@ -91,6 +102,13 @@ export function resolveAdminAuthConfig(
   const ttlHours = raw.sessionTtlHours ?? DEFAULT_SESSION_TTL_HOURS;
   if (!(ttlHours > 0) || !Number.isFinite(ttlHours)) {
     fail('sessionTtlHours must be a positive number of hours');
+  }
+  if (ttlHours < MIN_SESSION_TTL_HOURS) {
+    fail(
+      `sessionTtlHours must be at least ${MIN_SESSION_TTL_HOURS} hours ` +
+        `(got ${ttlHours}) — a session this short expires between requests and ` +
+        'presents as an admin console that reloads endlessly, not as a config error',
+    );
   }
 
   const callbackPath = raw.callbackPath ?? DEFAULT_CALLBACK_PATH;

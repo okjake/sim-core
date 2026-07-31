@@ -13,6 +13,13 @@ import {
 
 const TOKEN_KEY = 'sim-core.control-token';
 const POLL_MS = 5_000;
+/**
+ * Marks that a `/__control` 401 has already been answered with one full
+ * re-authentication this tab. `sessionStorage`, not a ref, because the
+ * recovery is a page navigation — anything in memory is gone by the time the
+ * question is asked again.
+ */
+const RECOVERY_KEY = 'sim-core.session-recovery-attempted';
 
 type Tab = 'control' | 'docs';
 
@@ -390,6 +397,13 @@ export default function App(): ReactElement {
   const [scenarios, setScenarios] = useState<ScenarioListing[]>([]);
   const [tail, setTail] = useState<RequestTailEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Set when a Google session is accepted by `/admin` but refused by
+   * `/__control`, and re-authenticating did not fix it. Drops the SPA back to
+   * the token gate so a `CONTROL_TOKEN` is still a way in while the server
+   * side is sorted out.
+   */
+  const [sessionRejected, setSessionRejected] = useState(false);
   const [tab, setTab] = useState<Tab>('control');
   const docsEnabled = brand?.docs === true;
 
@@ -402,7 +416,7 @@ export default function App(): ReactElement {
    *         `adminAuth` (a stored token from before the gate was turned on
    *         keeps working exactly as it always did).
    */
-  const token = storedToken ?? (brand?.adminAuth ? '' : null);
+  const token = storedToken ?? (brand?.adminAuth && !sessionRejected ? '' : null);
   // `token` is `''` in session mode, which is falsy — every check below has
   // to compare against `null` explicitly, not just truth-test `token`.
   const authed = token !== null;
@@ -425,13 +439,35 @@ export default function App(): ReactElement {
       setState(nextState);
       setTail(nextTail);
       setError(null);
+      // A working control plane re-arms the one-shot recovery, so a session
+      // that genuinely expires hours from now still gets its automatic trip
+      // through Google rather than an error the first time.
+      sessionStorage.removeItem(RECOVERY_KEY);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         if (sessionMode) {
           // The session expired or was revoked — there is no token to forget,
           // just a fresh trip through Google. A full navigation (not a fetch)
           // is required so AdminAuthMiddleware sees it and issues the 302.
-          window.location.href = '/admin';
+          //
+          // Bounded, because the recovery only works if the sign-in it
+          // triggers produces a session `/__control` will accept. When it does
+          // not — a session that authorizes `/admin` but not the control plane
+          // — an unbounded retry reloads the page forever, flashing the token
+          // gate on every pass and surfacing no error at all. One attempt, and
+          // then say what happened.
+          if (!sessionStorage.getItem(RECOVERY_KEY)) {
+            sessionStorage.setItem(RECOVERY_KEY, String(Date.now()));
+            window.location.href = '/admin';
+            return;
+          }
+          setError(
+            'Signed in, but the control plane rejected the session. ' +
+              'Re-authenticating did not help, so this is a server-side ' +
+              'problem rather than an expired session — check this service’s ' +
+              'logs for the reason, or paste a CONTROL_TOKEN to work around it.',
+          );
+          setSessionRejected(true);
           return;
         }
         localStorage.removeItem(TOKEN_KEY);

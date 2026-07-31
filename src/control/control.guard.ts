@@ -3,6 +3,7 @@ import {
   ExecutionContext,
   Inject,
   Injectable,
+  Logger,
   Optional,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -47,6 +48,8 @@ function safeEqual(a: string, b: string): boolean {
  */
 @Injectable()
 export class ControlAuthGuard implements CanActivate {
+  private readonly logger = new Logger('SimCore:control');
+
   constructor(
     @Inject(SIM_CORE_CONFIG) private readonly config: SimCoreConfig,
     @Optional() private readonly adminAuth?: AdminAuthService,
@@ -61,7 +64,40 @@ export class ControlAuthGuard implements CanActivate {
     if (this.adminAuth?.isEnabled() && this.adminAuth.authenticate(req)) {
       return true;
     }
+    this.logRejection(req);
     throw new UnauthorizedException('Missing or invalid control credentials');
+  }
+
+  /**
+   * Say WHY, at warn level.
+   *
+   * A silent 401 here is close to undiagnosable from the outside: the admin
+   * SPA answers one by re-authenticating, so the visible symptom is a page
+   * that reloads, not an error — and the server logs nothing at all. Every
+   * branch below is a materially different fix (paste a token / enable the
+   * gate / the session is being refused), and none of them is guessable from
+   * a bare 401.
+   *
+   * No credential material is logged: which credential was *presented* is the
+   * discriminating fact, not its value.
+   */
+  private logRejection(req: Request): void {
+    const hasBearer = (req.headers.authorization ?? '').toLowerCase().startsWith('bearer ');
+    const hasCookie = (req.headers.cookie ?? '').length > 0;
+    const gateOn = this.adminAuth?.isEnabled() === true;
+
+    const reason = hasBearer
+      ? 'bearer token did not match CONTROL_TOKEN'
+      : !gateOn
+        ? 'no bearer token, and adminAuth is not enabled on this service — ' +
+          'a browser session cannot authorize /__control here'
+        : hasCookie
+          ? 'no bearer token, and the adminAuth session cookie was not accepted ' +
+            '(expired, signed with a different ADMIN_SESSION_SECRET, or the ' +
+            'address is outside allowedDomain/allowedEmails)'
+          : 'no bearer token and no cookie was sent at all';
+
+    this.logger.warn(`/__control ${req.method} ${req.path ?? ''} rejected: ${reason}`);
   }
 
   private bearerMatches(req: Request): boolean {

@@ -19,6 +19,17 @@ export declare const DEFAULT_SESSION_COOKIE_NAME = "sim_admin_session";
  */
 export declare const ADMIN_COOKIE_PATH = "/";
 export declare const DEFAULT_SESSION_TTL_HOURS = 12;
+/**
+ * A TTL below this is rejected rather than honoured.
+ *
+ * `> 0` alone is not a useful check: a session lasting seconds passes it, and
+ * the failure it produces looks nothing like a configuration error. The cookie
+ * is issued, works for one request, then expires — so the SPA re-authenticates,
+ * succeeds, expires again, and the operator sees a page that reloads forever
+ * with no error anywhere. Six minutes is far below any sane setting and far
+ * above the range where that behaviour is possible.
+ */
+export declare const MIN_SESSION_TTL_HOURS = 0.1;
 export declare const DEFAULT_STATE_TTL_SECONDS = 600;
 export declare const DEFAULT_JWKS_CACHE_TTL_SECONDS = 3600;
 export declare const DEFAULT_CLOCK_SKEW_SECONDS = 120;

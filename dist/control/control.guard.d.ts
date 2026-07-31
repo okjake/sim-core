@@ -26,7 +26,22 @@ import { AdminAuthService } from '../admin-auth/admin-auth.service';
 export declare class ControlAuthGuard implements CanActivate {
     private readonly config;
     private readonly adminAuth?;
+    private readonly logger;
     constructor(config: SimCoreConfig, adminAuth?: AdminAuthService | undefined);
     canActivate(context: ExecutionContext): boolean;
+    /**
+     * Say WHY, at warn level.
+     *
+     * A silent 401 here is close to undiagnosable from the outside: the admin
+     * SPA answers one by re-authenticating, so the visible symptom is a page
+     * that reloads, not an error — and the server logs nothing at all. Every
+     * branch below is a materially different fix (paste a token / enable the
+     * gate / the session is being refused), and none of them is guessable from
+     * a bare 401.
+     *
+     * No credential material is logged: which credential was *presented* is the
+     * discriminating fact, not its value.
+     */
+    private logRejection;
     private bearerMatches;
 }
