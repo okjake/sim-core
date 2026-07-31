@@ -178,13 +178,24 @@ let AdminAuthService = class AdminAuthService {
         const maxAge = Math.max(0, session.exp - Math.floor(Date.now() / 1000));
         return this.cookie(req, this.serializeSession(session), maxAge);
     }
+    /**
+     * One `Set-Cookie` per path this session has ever been issued at.
+     *
+     * Not just the current one: a cookie is identified by name + domain + path,
+     * so clearing `Path=/` leaves a `Path=/admin` cookie from before v0.4.0
+     * completely untouched. That stale cookie is worse than no cookie — it
+     * satisfies `/admin` while never being sent to `/__control`, which the admin
+     * SPA reads as an expired session and answers by reloading, forever. Signing
+     * out is the one action a stuck operator can still take, so it has to
+     * actually get them unstuck.
+     */
     clearCookieHeader(req) {
-        return this.cookie(req, '', 0);
+        return [admin_auth_config_1.ADMIN_COOKIE_PATH, ...admin_auth_config_1.LEGACY_ADMIN_COOKIE_PATHS].map((path) => this.cookie(req, '', 0, path));
     }
-    cookie(req, value, maxAgeSeconds) {
+    cookie(req, value, maxAgeSeconds, path = admin_auth_config_1.ADMIN_COOKIE_PATH) {
         const attrs = [
             `${this.settings.cookieName}=${value}`,
-            `Path=${admin_auth_config_1.ADMIN_COOKIE_PATH}`,
+            `Path=${path}`,
             'HttpOnly',
             'SameSite=Lax',
             `Max-Age=${maxAgeSeconds}`,

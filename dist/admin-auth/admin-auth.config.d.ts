@@ -18,6 +18,22 @@ export declare const DEFAULT_SESSION_COOKIE_NAME = "sim_admin_session";
  * inert.
  */
 export declare const ADMIN_COOKIE_PATH = "/";
+/**
+ * Paths this cookie has been issued at by earlier versions.
+ *
+ * A cookie is keyed by name + domain + **path**, so a `Path=/` clear cannot
+ * touch a `Path=/admin` one: they are different cookies that happen to share a
+ * name. Before v0.4.0 the session was issued at `/admin`, and such a cookie
+ * survives the upgrade in a browser that signed in beforehand — where it
+ * authorizes `/admin` (so no redirect to Google, no log line) while never
+ * being sent to `/__control` (so every control call 401s). The admin SPA reads
+ * that as an expired session and reloads, forever.
+ *
+ * Sign-out therefore has to clear every path this cookie has ever used, not
+ * just the current one. Remove an entry here only once no browser can still be
+ * holding one.
+ */
+export declare const LEGACY_ADMIN_COOKIE_PATHS: readonly ["/admin"];
 export declare const DEFAULT_SESSION_TTL_HOURS = 12;
 /**
  * A TTL below this is rejected rather than honoured.

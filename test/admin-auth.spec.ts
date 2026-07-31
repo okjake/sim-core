@@ -606,6 +606,32 @@ describe('adminAuth — logout', () => {
     await request(server(ctx.harness)).get('/admin/auth/logout').expect(200);
     await ctx.harness.close();
   });
+
+  /**
+   * Regression: a browser that signed in before v0.4.0 holds the session at
+   * `Path=/admin`. Clearing only `Path=/` leaves it in place — and a cookie at
+   * that path satisfies `/admin` while never reaching `/__control`, so the
+   * console reloads forever with no redirect to Google and nothing in the
+   * logs. Sign-out is the only escape a stuck operator has, so it must clear
+   * every path the cookie has ever been issued at.
+   */
+  it('clears the cookie at legacy paths too, not just the current one', async () => {
+    const ctx = await createGatedHarness();
+
+    const res = await request(server(ctx.harness)).get('/admin/auth/logout').expect(200);
+    const cleared = res.headers['set-cookie'] as unknown as string[];
+
+    const paths = cleared.map((c) => /Path=([^;]+)/.exec(c)?.[1]);
+    expect(paths).toContain('/');
+    expect(paths).toContain('/admin');
+
+    for (const cookie of cleared) {
+      expect(cookie).toContain(`${DEFAULT_SESSION_COOKIE_NAME}=;`);
+      expect(cookie).toContain('Max-Age=0');
+    }
+
+    await ctx.harness.close();
+  });
 });
 
 describe('adminAuth — machine surfaces are untouched', () => {

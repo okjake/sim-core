@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SESSION_SECRET_MIN_LENGTH = exports.DEFAULT_CLOCK_SKEW_SECONDS = exports.DEFAULT_JWKS_CACHE_TTL_SECONDS = exports.DEFAULT_STATE_TTL_SECONDS = exports.MIN_SESSION_TTL_HOURS = exports.DEFAULT_SESSION_TTL_HOURS = exports.ADMIN_COOKIE_PATH = exports.DEFAULT_SESSION_COOKIE_NAME = exports.ADMIN_LOGOUT_PATH = exports.DEFAULT_CALLBACK_PATH = exports.GOOGLE_ISSUERS = exports.GOOGLE_JWKS_URI = exports.GOOGLE_TOKEN_ENDPOINT = exports.GOOGLE_AUTHORIZATION_ENDPOINT = void 0;
+exports.SESSION_SECRET_MIN_LENGTH = exports.DEFAULT_CLOCK_SKEW_SECONDS = exports.DEFAULT_JWKS_CACHE_TTL_SECONDS = exports.DEFAULT_STATE_TTL_SECONDS = exports.MIN_SESSION_TTL_HOURS = exports.DEFAULT_SESSION_TTL_HOURS = exports.LEGACY_ADMIN_COOKIE_PATHS = exports.ADMIN_COOKIE_PATH = exports.DEFAULT_SESSION_COOKIE_NAME = exports.ADMIN_LOGOUT_PATH = exports.DEFAULT_CALLBACK_PATH = exports.GOOGLE_ISSUERS = exports.GOOGLE_JWKS_URI = exports.GOOGLE_TOKEN_ENDPOINT = exports.GOOGLE_AUTHORIZATION_ENDPOINT = void 0;
 exports.resolveAdminAuthConfig = resolveAdminAuthConfig;
 /** Google's OIDC endpoints. Overridable per config, only ever for tests. */
 exports.GOOGLE_AUTHORIZATION_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
@@ -21,6 +21,22 @@ exports.DEFAULT_SESSION_COOKIE_NAME = 'sim_admin_session';
  * inert.
  */
 exports.ADMIN_COOKIE_PATH = '/';
+/**
+ * Paths this cookie has been issued at by earlier versions.
+ *
+ * A cookie is keyed by name + domain + **path**, so a `Path=/` clear cannot
+ * touch a `Path=/admin` one: they are different cookies that happen to share a
+ * name. Before v0.4.0 the session was issued at `/admin`, and such a cookie
+ * survives the upgrade in a browser that signed in beforehand — where it
+ * authorizes `/admin` (so no redirect to Google, no log line) while never
+ * being sent to `/__control` (so every control call 401s). The admin SPA reads
+ * that as an expired session and reloads, forever.
+ *
+ * Sign-out therefore has to clear every path this cookie has ever used, not
+ * just the current one. Remove an entry here only once no browser can still be
+ * holding one.
+ */
+exports.LEGACY_ADMIN_COOKIE_PATHS = ['/admin'];
 exports.DEFAULT_SESSION_TTL_HOURS = 12;
 /**
  * A TTL below this is rejected rather than honoured.

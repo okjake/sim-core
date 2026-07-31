@@ -5,6 +5,7 @@ import type { Request } from 'express';
 import { SIM_CORE_CONFIG, type SimCoreConfig } from '../config';
 import {
   ADMIN_COOKIE_PATH,
+  LEGACY_ADMIN_COOKIE_PATHS,
   ADMIN_LOGOUT_PATH,
   resolveAdminAuthConfig,
   type ResolvedAdminAuthConfig,
@@ -221,14 +222,32 @@ export class AdminAuthService {
     return this.cookie(req, this.serializeSession(session), maxAge);
   }
 
-  clearCookieHeader(req: Request): string {
-    return this.cookie(req, '', 0);
+  /**
+   * One `Set-Cookie` per path this session has ever been issued at.
+   *
+   * Not just the current one: a cookie is identified by name + domain + path,
+   * so clearing `Path=/` leaves a `Path=/admin` cookie from before v0.4.0
+   * completely untouched. That stale cookie is worse than no cookie — it
+   * satisfies `/admin` while never being sent to `/__control`, which the admin
+   * SPA reads as an expired session and answers by reloading, forever. Signing
+   * out is the one action a stuck operator can still take, so it has to
+   * actually get them unstuck.
+   */
+  clearCookieHeader(req: Request): string[] {
+    return [ADMIN_COOKIE_PATH, ...LEGACY_ADMIN_COOKIE_PATHS].map((path) =>
+      this.cookie(req, '', 0, path),
+    );
   }
 
-  private cookie(req: Request, value: string, maxAgeSeconds: number): string {
+  private cookie(
+    req: Request,
+    value: string,
+    maxAgeSeconds: number,
+    path: string = ADMIN_COOKIE_PATH,
+  ): string {
     const attrs = [
       `${this.settings.cookieName}=${value}`,
-      `Path=${ADMIN_COOKIE_PATH}`,
+      `Path=${path}`,
       'HttpOnly',
       'SameSite=Lax',
       `Max-Age=${maxAgeSeconds}`,

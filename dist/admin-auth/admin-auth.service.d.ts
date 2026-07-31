@@ -54,7 +54,18 @@ export declare class AdminAuthService {
      */
     authenticate(req: Request, now?: number): AdminSession | null;
     setCookieHeader(req: Request, session: AdminSession): string;
-    clearCookieHeader(req: Request): string;
+    /**
+     * One `Set-Cookie` per path this session has ever been issued at.
+     *
+     * Not just the current one: a cookie is identified by name + domain + path,
+     * so clearing `Path=/` leaves a `Path=/admin` cookie from before v0.4.0
+     * completely untouched. That stale cookie is worse than no cookie — it
+     * satisfies `/admin` while never being sent to `/__control`, which the admin
+     * SPA reads as an expired session and answers by reloading, forever. Signing
+     * out is the one action a stuck operator can still take, so it has to
+     * actually get them unstuck.
+     */
+    clearCookieHeader(req: Request): string[];
     private cookie;
     /**
      * Render terminates TLS, so `req.protocol` is only meaningful with

@@ -463,9 +463,11 @@ export default function App(): ReactElement {
           }
           setError(
             'Signed in, but the control plane rejected the session. ' +
-              'Re-authenticating did not help, so this is a server-side ' +
-              'problem rather than an expired session — check this service’s ' +
-              'logs for the reason, or paste a CONTROL_TOKEN to work around it.',
+              'Reloading did not help, so this is not an expired session. ' +
+              'The usual cause is a session cookie left at an older path by a ' +
+              'previous version — use Sign out above (it clears every path) ' +
+              'and sign in again. Failing that, this service’s logs now name ' +
+              'the reason, and a pasted CONTROL_TOKEN still works.',
           );
           setSessionRejected(true);
           return;
