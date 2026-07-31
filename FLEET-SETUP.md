@@ -139,9 +139,25 @@ point it at the repo, and it reads that repo's `render.yaml`. Everything marked
       Bookbridge's key *at Staybase*, not a platform credential). Leave
       `WEBHOOK_SECRET` blank.
 - [ ] Private-dependency access for the builds: all three consume
-      `@okjake/sim-core` from a private repo. Either add a read-only deploy key
-      for `okjake/sim-core` to each service, or set `GH_TOKEN` (Docker builds
-      declare a matching `ARG`). Without it the build fails at install.
+      `@okjake/sim-core` from a private repo. Render has no per-service
+      "add an SSH key" flow for this — the mechanism is a plain env var:
+
+      1. GitHub → your account → **Settings → Developer settings → Fine-grained
+         personal access tokens → Generate new token**. Scope it to **only**
+         `okjake/sim-core`, **read-only** (Contents: Read). One token can be
+         reused across all three services — it's read-only either way.
+      2. Set it as `GH_TOKEN` on each of the three services (`sync: false` in
+         every `render.yaml`, so Render will prompt for it).
+      3. Staybase and Bookbridge build via Docker: Render passes service env
+         vars into Docker builds as build args, and each `Dockerfile` already
+         declares `ARG GH_TOKEN=""` and rewrites `github.com` → an
+         `x-access-token` URL before `pnpm install` when it's set.
+      4. Pebblepay builds natively (no Dockerfile) — its `buildCommand` in
+         `render.yaml` does the same URL rewrite directly, reading `GH_TOKEN`
+         as a normal shell env var, before `pnpm install` runs.
+
+      Without this the build fails at install with a git auth error — that
+      failure mode is the tell if a token wasn't picked up.
 - [ ] Record every `CONTROL_TOKEN` Render generates — you need them to drive
       scenarios, and they are only shown in the dashboard.
 
