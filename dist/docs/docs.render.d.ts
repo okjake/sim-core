@@ -51,3 +51,18 @@ export interface DocsChangelogModel {
 }
 export declare function renderChangelogPage(model: DocsChangelogModel): string;
 export declare function renderNotFoundPage(siteTitle: string, accent: string, what: string): string;
+export interface DocsReferenceModel {
+    siteTitle: string;
+    accent: string;
+    /** Label of the active published spec version, if any. */
+    activeSpecLabel: string | null;
+}
+/**
+ * Rendered API reference for the active spec. A standalone page, not the
+ * prose layout: the reference UI wants the whole viewport. Scalar is loaded
+ * from a CDN and reads `/openapi.json` same-origin, so the page shows whatever
+ * version is currently published and re-renders when a scenario republishes.
+ * The markup is deterministic (no timestamps, no ids), matching the other docs
+ * pages, so the platform's page differ sees it change only when the spec does.
+ */
+export declare function renderReferencePage(model: DocsReferenceModel): string;

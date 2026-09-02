@@ -97,7 +97,7 @@ rename only; no behaviour moved with it.
 
 | Added | Opt-in? |
 |---|---|
-| Docs engine: `/docs`, `/docs/guides/:slug`, `/docs/changelog`, versioned specs on `/openapi.json` | yes — `docs.enabled` |
+| Docs engine: `/docs`, `/docs/reference`, `/docs/guides/:slug`, `/docs/changelog`, versioned specs on `/openapi.json` | yes — `docs.enabled` |
 | Storage module (`better-sqlite3`, `DATA_DIR`, versioned migrations) | yes — used only by the docs engine |
 | `/__control/docs/*` editor API and the admin SPA's **Docs** tab | yes — follows `docs.enabled` |
 | `POST /__control/reset-docs` | yes — 404s when docs are off |
@@ -1145,6 +1145,7 @@ single-argument form from v0.1.0 still works).
 | GET | `/__admin/brand` | none | display-only `{ name, version, brand, driver, docs, adminAuth }` for the SPA shell |
 | GET | `/docs` | `docs.authMode` | **docs only.** Index: active spec label, published guides, changelog link |
 | GET | `/docs/guides/:slug` | `docs.authMode` | **docs only.** 404 (HTML) for a missing or unpublished slug |
+| GET | `/docs/reference` | `docs.authMode` | **docs only.** Rendered API reference (Scalar, loaded from a CDN) over the active `/openapi.json` |
 | GET | `/docs/changelog` | `docs.authMode` | **docs only.** Published entries, newest first |
 | — | `/__control/*` | **bearer** | see below |
 

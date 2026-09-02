@@ -15,6 +15,7 @@ import {
 } from './docs.repository';
 import {
   renderChangelogPage,
+  renderReferencePage,
   renderDocsIndex,
   renderGuidePage,
   renderNotFoundPage,
@@ -270,6 +271,15 @@ export class DocsService implements OnModuleDestroy {
       activeSpecLabel: active?.label ?? null,
       guides: this.repo.listGuides(true),
       hasChangelog: this.repo.listChangelog(true).length > 0,
+    });
+  }
+
+  renderReference(): string {
+    const active = this.repo.getActiveSpecVersion();
+    return renderReferencePage({
+      siteTitle: this.siteTitle,
+      accent: this.accent,
+      activeSpecLabel: active?.label ?? null,
     });
   }
 

@@ -13,6 +13,7 @@ export declare class DocsController {
     constructor(docs: DocsService);
     private send;
     index(res: Response): void;
+    reference(res: Response): void;
     changelog(res: Response): void;
     guide(slug: string, res: Response): void;
 }

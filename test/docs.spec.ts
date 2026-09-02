@@ -338,6 +338,16 @@ describe('docs engine', () => {
       expect(page.text).toContain('Not found');
     });
 
+    it('renders an API reference page that reads the spec same-origin', async () => {
+      const res = await request(server()).get('/docs/reference').expect(200);
+      expect(res.headers['content-type']).toContain('text/html');
+      expect(res.text).toContain('data-url="/openapi.json"');
+      expect(res.text).toContain('@scalar/api-reference');
+      expect(res.text).toContain('<code>baseline</code>');
+      const index = await request(server()).get('/docs').expect(200);
+      expect(index.text).toContain('href="/docs/reference"');
+    });
+
     it('renders a guide page from its markdown', async () => {
       const res = await request(server()).get('/docs/guides/getting-started').expect(200);
       expect(res.text).toContain('<h1>Getting started</h1>');
@@ -358,7 +368,7 @@ describe('docs engine', () => {
     });
 
     describe('deterministic HTML', () => {
-      const pages = ['/docs', '/docs/guides/getting-started', '/docs/changelog'];
+      const pages = ['/docs', '/docs/reference', '/docs/guides/getting-started', '/docs/changelog'];
 
       it.each(pages)('renders %s byte-identically on repeat requests', async (path) => {
         const first = await request(server()).get(path).expect(200);

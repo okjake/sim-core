@@ -69,6 +69,7 @@ export declare class DocsService implements OnModuleDestroy {
     lastSeed(): SeedResult | null;
     private get accent();
     renderIndex(): string;
+    renderReference(): string;
     /** Drafts 404 on the public surface — that is the whole point of the split. */
     renderGuide(slug: string): {
         html: string;

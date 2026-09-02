@@ -29,6 +29,11 @@ export class DocsController {
     this.send(res, this.docs.renderIndex());
   }
 
+  @Get('reference')
+  reference(@Res() res: Response): void {
+    this.send(res, this.docs.renderReference());
+  }
+
   @Get('changelog')
   changelog(@Res() res: Response): void {
     this.send(res, this.docs.renderChangelog());

@@ -113,9 +113,10 @@ export function renderDocsIndex(model: DocsIndexModel): string {
   sections.push('<h2>API reference</h2>');
   sections.push(
     model.activeSpecLabel
-      ? `<p>The current OpenAPI document is <a href="/openapi.json">/openapi.json</a> ` +
-          `(version <code>${escapeHtml(model.activeSpecLabel)}</code>).</p>`
-      : '<p>The current OpenAPI document is <a href="/openapi.json">/openapi.json</a>.</p>',
+      ? `<p><a href="/docs/reference">Browse the API reference</a>. The current OpenAPI document is ` +
+          `<a href="/openapi.json">/openapi.json</a> (version <code>${escapeHtml(model.activeSpecLabel)}</code>).</p>`
+      : '<p><a href="/docs/reference">Browse the API reference</a>. The current OpenAPI document is ' +
+          '<a href="/openapi.json">/openapi.json</a>.</p>',
   );
 
   sections.push('<h2>Guides</h2>');
@@ -206,4 +207,56 @@ export function renderNotFoundPage(siteTitle: string, accent: string, what: stri
       `<p class="muted">${escapeHtml(what)}</p>`,
     ].join('\n'),
   });
+}
+
+export interface DocsReferenceModel {
+  siteTitle: string;
+  accent: string;
+  /** Label of the active published spec version, if any. */
+  activeSpecLabel: string | null;
+}
+
+/**
+ * Rendered API reference for the active spec. A standalone page, not the
+ * prose layout: the reference UI wants the whole viewport. Scalar is loaded
+ * from a CDN and reads `/openapi.json` same-origin, so the page shows whatever
+ * version is currently published and re-renders when a scenario republishes.
+ * The markup is deterministic (no timestamps, no ids), matching the other docs
+ * pages, so the platform's page differ sees it change only when the spec does.
+ */
+export function renderReferencePage(model: DocsReferenceModel): string {
+  const title = escapeHtml(model.siteTitle);
+  const accent = escapeHtml(model.accent);
+  const version = model.activeSpecLabel
+    ? ` <span class="version">version <code>${escapeHtml(model.activeSpecLabel)}</code></span>`
+    : '';
+  return [
+    '<!doctype html>',
+    '<html lang="en">',
+    '<head>',
+    '<meta charset="utf-8" />',
+    '<meta name="viewport" content="width=device-width,initial-scale=1" />',
+    `<title>API reference — ${title}</title>`,
+    `<style>:root{--accent:${accent};--fg:#16191d;--muted:#5b6472;--bg:#ffffff;--line:#e4e7ec}` +
+      '@media (prefers-color-scheme:dark){:root{--fg:#e8eaed;--muted:#9aa3b2;--bg:#14171b;--line:#2a2f37}}' +
+      'body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}' +
+      'header.site{display:flex;align-items:baseline;gap:1rem;padding:.8rem 1.25rem;border-bottom:1px solid var(--line)}' +
+      'header.site .title{font-size:.95rem;font-weight:600;letter-spacing:.02em;color:var(--accent);text-decoration:none}' +
+      'header.site nav a{color:var(--muted);text-decoration:none;margin-right:1rem;font-size:.85rem}' +
+      'header.site nav a:hover{color:var(--accent)}' +
+      'header.site .version{color:var(--muted);font-size:.85rem}' +
+      'header.site code{background:transparent;padding:0}</style>',
+    '</head>',
+    '<body>',
+    '<header class="site">',
+    `<a class="title" href="/docs">${title}</a>`,
+    '<nav><a href="/docs">Docs</a><a href="/docs/changelog">Changelog</a><a href="/openapi.json">openapi.json</a></nav>',
+    version,
+    '</header>',
+    '<script id="api-reference" data-url="/openapi.json"></script>',
+    '<script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>',
+    '</body>',
+    '</html>',
+    '',
+  ].join('\n');
 }

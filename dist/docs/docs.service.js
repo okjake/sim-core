@@ -221,6 +221,14 @@ let DocsService = class DocsService {
             hasChangelog: this.repo.listChangelog(true).length > 0,
         });
     }
+    renderReference() {
+        const active = this.repo.getActiveSpecVersion();
+        return (0, docs_render_1.renderReferencePage)({
+            siteTitle: this.siteTitle,
+            accent: this.accent,
+            activeSpecLabel: active?.label ?? null,
+        });
+    }
     /** Drafts 404 on the public surface — that is the whole point of the split. */
     renderGuide(slug) {
         const guide = this.repo.getGuide(slug);
