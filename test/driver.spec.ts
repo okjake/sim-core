@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 
 import request from 'supertest';
 
-import { DriverService, type DriverConfig, type FetchLike } from '../src';
+import { DriverService, type DriverConfig, type FetchLike, type FlowDefinition } from '../src';
 import { demoFlows } from '../examples/demo/demo.config';
 import { bearer, createHarness, wait, type TestHarness } from './helpers';
 
@@ -157,6 +157,60 @@ describe('traffic driver', () => {
       expect(calls[0]?.url).toBe('http://sim.test/widgets');
       // The id came out of step 1's response body.
       expect(calls[1]?.url).toBe('http://sim.test/widgets/w-9');
+    });
+
+    it('walks past request-less steps inside one tick instead of burning the interval', async () => {
+      // A flow whose first two steps decline (nothing in the ledger to modify
+      // or cancel) before a step that always sends. Before this change the
+      // driver returned null on the first empty step, so with a thin ledger a
+      // scheduled loop delivered a fraction of the configured rate.
+      const thinLedger: FlowDefinition = {
+        id: 'modify-then-browse',
+        weight: 1,
+        steps: [
+          { name: 'find', request: () => null },
+          { name: 'modify', request: () => null },
+          { name: 'list', request: () => ({ method: 'GET', path: '/widgets' }) },
+        ],
+      };
+      const { driver, calls } = makeDriver({ maxRequestsPerMinute: 1000, flows: [thinLedger] });
+
+      const first = await driver.tick(1);
+      expect(first).not.toBeNull();
+      expect(calls).toHaveLength(1);
+      expect(driver.status().emptySteps).toBe(2);
+
+      // Ten ticks, ten requests — every slot the scheduler hands out is used.
+      for (let i = 2; i <= 10; i += 1) {
+        expect(await driver.tick(i)).not.toBeNull();
+      }
+      expect(calls).toHaveLength(10);
+      expect(driver.status().emptySteps).toBe(20);
+    });
+
+    it('gives up a tick whose flows are empty end to end, without spinning', async () => {
+      const declining: FlowDefinition = {
+        id: 'nothing-doing',
+        weight: 1,
+        steps: [{ name: 'noop', request: () => null }],
+      };
+      const { driver, calls } = makeDriver({ maxRequestsPerMinute: 1000, flows: [declining] });
+
+      expect(await driver.tick(1)).toBeNull();
+      expect(calls).toHaveLength(0);
+      // Bounded: one tick walks at most MAX_EMPTY_STEPS_PER_TICK steps.
+      expect(driver.status().emptySteps).toBe(16);
+    });
+
+    it('still stops at the hard cap without walking further steps', async () => {
+      const { driver, calls } = makeDriver({ maxRequestsPerMinute: 2 });
+      const now = Date.now();
+      for (let i = 0; i < 20; i += 1) {
+        await driver.tick(now + i);
+      }
+      expect(calls).toHaveLength(2);
+      expect(driver.status().capHits).toBe(18);
+      expect(driver.status().emptySteps).toBe(0);
     });
 
     it('applies configured base headers', async () => {

@@ -8,6 +8,7 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var DriverService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DriverService = void 0;
 const common_1 = require("@nestjs/common");
@@ -30,6 +31,7 @@ const FLAT_CURVE = {
  * asserts that literally, so keep it that way.
  */
 let DriverService = class DriverService {
+    static { DriverService_1 = this; }
     logger = new common_1.Logger('SimDriver');
     config;
     rng;
@@ -46,6 +48,8 @@ let DriverService = class DriverService {
     totalRequests = 0;
     totalFailures = 0;
     capHits = 0;
+    /** Request-less flow steps walked past inside ticks (see `tick`). */
+    emptySteps = 0;
     lastRequestAt = null;
     flowStats = new Map();
     memory = {};
@@ -187,15 +191,43 @@ let DriverService = class DriverService {
     /**
      * One loop iteration: at most one HTTP request. Exposed for tests so the
      * pipeline can be driven without wall-clock scheduling.
+     *
+     * A flow step is allowed to build no request (nothing to modify, nothing to
+     * cancel, no next page) — that is how flows stay honest about state they do
+     * not have. It must NOT cost a scheduling slot, though: the loop sleeps a
+     * full `60_000 / rpm` interval between ticks, so a tick that advances past
+     * an empty step and returns would silently halve or third the delivered
+     * rate whenever the ledger is thin (fresh boot, cancel-heavy mix). So a
+     * tick walks past empty steps — across flow boundaries — until a step
+     * produces a request, bounded so a flow set that is empty end to end still
+     * terminates. Paused, unconfigured and cap-hit ticks still return
+     * immediately; the cap is checked once per HTTP request, not per attempt.
      */
     async tick(now = Date.now()) {
+        for (let attempt = 0; attempt < DriverService_1.MAX_EMPTY_STEPS_PER_TICK; attempt += 1) {
+            const outcome = await this.tickOnce(now);
+            if (outcome.kind === 'sent')
+                return outcome.response;
+            if (outcome.kind === 'idle')
+                return null;
+            this.emptySteps += 1;
+        }
+        return null;
+    }
+    /**
+     * How many request-less steps one tick may walk past before giving up.
+     * Larger than any flow's step count so a tick can cross at least one flow
+     * boundary; small enough that a pathological flow set cannot spin.
+     */
+    static MAX_EMPTY_STEPS_PER_TICK = 16;
+    async tickOnce(now) {
         if (!this.config || !this.isConfigured())
-            return null;
+            return { kind: 'idle' };
         if (this.mode === 'paused')
-            return null;
+            return { kind: 'idle' };
         if (!this.withinCap(now)) {
             this.capHits += 1;
-            return null;
+            return { kind: 'idle' };
         }
         if (!this.run) {
             const flow = this.selectionRng.weightedPick(this.config.flows, (f) => f.weight);
@@ -207,7 +239,7 @@ let DriverService = class DriverService {
         const step = flow.steps[stepIndex];
         if (!step) {
             this.run = null;
-            return null;
+            return { kind: 'empty' };
         }
         const ctx = {
             rng: this.rng.derive(`${flow.id}:${step.name}:${this.totalRequests}`),
@@ -221,11 +253,11 @@ let DriverService = class DriverService {
         catch (error) {
             this.logger.warn(`flow ${flow.id} step ${step.name} failed to build a request: ${String(error)}`);
             this.run = null;
-            return null;
+            return { kind: 'empty' };
         }
         this.advance();
         if (!request) {
-            return null;
+            return { kind: 'empty' };
         }
         for (const mutator of this.mutators.values()) {
             request = mutator(request, { flowId: flow.id, stepName: step.name });
@@ -248,7 +280,7 @@ let DriverService = class DriverService {
                 this.logger.warn(`flow ${flow.id} step ${step.name} onResponse threw: ${String(error)}`);
             }
         }
-        return response;
+        return { kind: 'sent', response };
     }
     advance() {
         if (!this.run)
@@ -353,6 +385,7 @@ let DriverService = class DriverService {
             effectiveRequestsPerMinute: Math.round(this.effectiveRequestsPerMinute() * 100) / 100,
             requestsLastMinute: this.requestsLastMinute(now),
             capHits: this.capHits,
+            emptySteps: this.emptySteps,
             totalRequests: this.totalRequests,
             totalFailures: this.totalFailures,
             seed: this.config ? this.rng.seed : null,
@@ -376,7 +409,7 @@ let DriverService = class DriverService {
     }
 };
 exports.DriverService = DriverService;
-exports.DriverService = DriverService = __decorate([
+exports.DriverService = DriverService = DriverService_1 = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [Object])
 ], DriverService);

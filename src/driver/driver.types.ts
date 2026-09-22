@@ -120,6 +120,8 @@ export interface DriverStatus {
   effectiveRequestsPerMinute: number;
   requestsLastMinute: number;
   capHits: number;
+  /** Request-less flow steps the driver walked past inside ticks. */
+  emptySteps: number;
   totalRequests: number;
   totalFailures: number;
   seed: number | null;

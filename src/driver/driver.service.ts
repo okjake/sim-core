@@ -21,6 +21,14 @@ const FLAT_CURVE: RhythmCurve = {
   weekend: new Array<number>(24).fill(1),
 };
 
+/** What one pass through the flow pipeline did — see `DriverService.tick`. */
+type TickOutcome =
+  | { kind: 'sent'; response: FlowResponse }
+  /** Paused, unconfigured, or at the hard cap: the tick should stop here. */
+  | { kind: 'idle' }
+  /** The step built no request; the tick may walk on to the next one. */
+  | { kind: 'empty' };
+
 interface ActiveRun {
   flow: FlowDefinition;
   stepIndex: number;
@@ -63,6 +71,8 @@ export class DriverService
   private totalRequests = 0;
   private totalFailures = 0;
   private capHits = 0;
+  /** Request-less flow steps walked past inside ticks (see `tick`). */
+  private emptySteps = 0;
   private lastRequestAt: number | null = null;
   private readonly flowStats = new Map<string, DriverFlowStats>();
   private readonly memory: Record<string, unknown> = {};
@@ -230,13 +240,41 @@ export class DriverService
   /**
    * One loop iteration: at most one HTTP request. Exposed for tests so the
    * pipeline can be driven without wall-clock scheduling.
+   *
+   * A flow step is allowed to build no request (nothing to modify, nothing to
+   * cancel, no next page) — that is how flows stay honest about state they do
+   * not have. It must NOT cost a scheduling slot, though: the loop sleeps a
+   * full `60_000 / rpm` interval between ticks, so a tick that advances past
+   * an empty step and returns would silently halve or third the delivered
+   * rate whenever the ledger is thin (fresh boot, cancel-heavy mix). So a
+   * tick walks past empty steps — across flow boundaries — until a step
+   * produces a request, bounded so a flow set that is empty end to end still
+   * terminates. Paused, unconfigured and cap-hit ticks still return
+   * immediately; the cap is checked once per HTTP request, not per attempt.
    */
   async tick(now: number = Date.now()): Promise<FlowResponse | null> {
-    if (!this.config || !this.isConfigured()) return null;
-    if (this.mode === 'paused') return null;
+    for (let attempt = 0; attempt < DriverService.MAX_EMPTY_STEPS_PER_TICK; attempt += 1) {
+      const outcome = await this.tickOnce(now);
+      if (outcome.kind === 'sent') return outcome.response;
+      if (outcome.kind === 'idle') return null;
+      this.emptySteps += 1;
+    }
+    return null;
+  }
+
+  /**
+   * How many request-less steps one tick may walk past before giving up.
+   * Larger than any flow's step count so a tick can cross at least one flow
+   * boundary; small enough that a pathological flow set cannot spin.
+   */
+  private static readonly MAX_EMPTY_STEPS_PER_TICK = 16;
+
+  private async tickOnce(now: number): Promise<TickOutcome> {
+    if (!this.config || !this.isConfigured()) return { kind: 'idle' };
+    if (this.mode === 'paused') return { kind: 'idle' };
     if (!this.withinCap(now)) {
       this.capHits += 1;
-      return null;
+      return { kind: 'idle' };
     }
 
     if (!this.run) {
@@ -250,7 +288,7 @@ export class DriverService
     const step = flow.steps[stepIndex];
     if (!step) {
       this.run = null;
-      return null;
+      return { kind: 'empty' };
     }
 
     const ctx: FlowContext = {
@@ -267,13 +305,13 @@ export class DriverService
         `flow ${flow.id} step ${step.name} failed to build a request: ${String(error)}`,
       );
       this.run = null;
-      return null;
+      return { kind: 'empty' };
     }
 
     this.advance();
 
     if (!request) {
-      return null;
+      return { kind: 'empty' };
     }
 
     for (const mutator of this.mutators.values()) {
@@ -302,7 +340,7 @@ export class DriverService
       }
     }
 
-    return response;
+    return { kind: 'sent', response };
   }
 
   private advance(): void {
@@ -418,6 +456,7 @@ export class DriverService
       effectiveRequestsPerMinute: Math.round(this.effectiveRequestsPerMinute() * 100) / 100,
       requestsLastMinute: this.requestsLastMinute(now),
       capHits: this.capHits,
+      emptySteps: this.emptySteps,
       totalRequests: this.totalRequests,
       totalFailures: this.totalFailures,
       seed: this.config ? this.rng.seed : null,
