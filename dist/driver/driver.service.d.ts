@@ -30,6 +30,8 @@ export declare class DriverService implements DriverControl, OnApplicationBootst
     private totalRequests;
     private totalFailures;
     private capHits;
+    /** Request-less flow steps walked past inside ticks (see `tick`). */
+    private emptySteps;
     private lastRequestAt;
     private readonly flowStats;
     private readonly memory;
@@ -63,8 +65,26 @@ export declare class DriverService implements DriverControl, OnApplicationBootst
     /**
      * One loop iteration: at most one HTTP request. Exposed for tests so the
      * pipeline can be driven without wall-clock scheduling.
+     *
+     * A flow step is allowed to build no request (nothing to modify, nothing to
+     * cancel, no next page) — that is how flows stay honest about state they do
+     * not have. It must NOT cost a scheduling slot, though: the loop sleeps a
+     * full `60_000 / rpm` interval between ticks, so a tick that advances past
+     * an empty step and returns would silently halve or third the delivered
+     * rate whenever the ledger is thin (fresh boot, cancel-heavy mix). So a
+     * tick walks past empty steps — across flow boundaries — until a step
+     * produces a request, bounded so a flow set that is empty end to end still
+     * terminates. Paused, unconfigured and cap-hit ticks still return
+     * immediately; the cap is checked once per HTTP request, not per attempt.
      */
     tick(now?: number): Promise<FlowResponse | null>;
+    /**
+     * How many request-less steps one tick may walk past before giving up.
+     * Larger than any flow's step count so a tick can cross at least one flow
+     * boundary; small enough that a pathological flow set cannot spin.
+     */
+    private static readonly MAX_EMPTY_STEPS_PER_TICK;
+    private tickOnce;
     private advance;
     private statsFor;
     private baseHeaders;
