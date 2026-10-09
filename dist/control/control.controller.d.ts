@@ -1,8 +1,10 @@
+import { type SimCoreConfig } from '../config';
 import { DocsService } from '../docs/docs.service';
 import type { SeedResult } from '../docs/docs.seed';
 import { RequestTailService, type RequestTailEntry } from '../request-tail/request-tail.service';
 import type { ScenarioListing } from '../scenarios/scenario.types';
 import { WebhookRecorderService, type RecordedWebhook } from '../webhooks/webhook-recorder.service';
+import type { AdminAction } from './admin-actions';
 import { ControlService, type ControlState } from './control.service';
 /**
  * The control plane. Every route requires `Authorization: Bearer ${CONTROL_TOKEN}`.
@@ -12,11 +14,21 @@ export declare class ControlController {
     private readonly control;
     private readonly tail;
     private readonly webhooks;
+    private readonly config;
     private readonly docs?;
-    constructor(control: ControlService, tail: RequestTailService, webhooks: WebhookRecorderService, docs?: DocsService | undefined);
+    constructor(control: ControlService, tail: RequestTailService, webhooks: WebhookRecorderService, config: SimCoreConfig, docs?: DocsService | undefined);
     state(): ControlState;
     scenarios(): {
         scenarios: ScenarioListing[];
+    };
+    /**
+     * v0.5.0, additive. The sim's declared {@link AdminAction}s, so the SPA can
+     * render buttons for consumer-owned `/__control/*` routes. Empty when none
+     * are declared. Behind the guard (not on `/__admin/brand`) because it names
+     * control routes.
+     */
+    actions(): {
+        actions: AdminAction[];
     };
     /** Additive to the spec table: the admin SPA's request-tail view reads this. */
     requests(limit?: string): {

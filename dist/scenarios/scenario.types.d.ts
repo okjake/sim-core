@@ -22,11 +22,50 @@ export interface ScenarioContext {
         };
     };
 }
+/**
+ * Optional presentation metadata for the admin SPA (v0.5.0).
+ *
+ * Purely descriptive: nothing on the server reads it, the control API's
+ * contract is unchanged, and a scenario without it still lists and runs — the
+ * SPA falls back to the id and `description`. It exists so the operator page
+ * can say what a run is FOR (which Partner API automation it exercises) rather
+ * than only what it does mechanically.
+ */
+export interface ScenarioAdminMeta {
+    /** Human name, e.g. `Error storm`. Defaults to the id. */
+    title?: string;
+    /**
+     * What the operator should expect to see happen in Partner API, one short
+     * phrase each — e.g. `Traffic troubleshooting`. Rendered as "Triggers: …".
+     */
+    triggers?: string[];
+    /**
+     * Section the scenario is listed under. Scenarios sharing a group are shown
+     * together; groups appear in first-seen order, consumer groups before the
+     * built-in `Generic faults`.
+     */
+    group?: string;
+    /**
+     * The scenario's effect does NOT revert at TTL expiry (its revert is a
+     * deliberate no-op), e.g. publishing a spec version. The SPA marks it
+     * permanent, moves the duration picker under Options (the run slot only) and
+     * always asks before running it.
+     */
+    durable?: boolean;
+    /** How to undo a durable scenario, e.g. `Reset docs (Danger zone)`. */
+    undo?: string;
+    /** Pre-selected duration in the SPA. Default 300. Ignored for durable scenarios. */
+    defaultTtlSeconds?: number;
+    /** Sort key within its group (ascending). Unset sorts after set, then by title. */
+    order?: number;
+}
 export interface Scenario<P = any> {
     id: string;
     description: string;
     /** Optional "zod-ish" schema. Anything with `.parse()` works; `.describe()` powers the admin form. */
     params?: ParamSchema<P>;
+    /** Optional admin-SPA presentation metadata. See {@link ScenarioAdminMeta}. */
+    admin?: ScenarioAdminMeta;
     apply(ctx: ScenarioContext, params: P): RevertFn | Promise<RevertFn>;
 }
 /** Public listing shape returned by `GET /__control/scenarios`. */
@@ -34,6 +73,8 @@ export interface ScenarioListing {
     id: string;
     description: string;
     params: unknown | null;
+    /** Additive in v0.5.0. `null` when the scenario declares none. */
+    admin: ScenarioAdminMeta | null;
 }
 export interface ActiveScenarioState {
     id: string;

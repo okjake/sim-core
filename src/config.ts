@@ -1,4 +1,5 @@
 import { resolveAdminAuthConfig } from './admin-auth/admin-auth.config';
+import { validateAdminActions, type AdminAction } from './control/admin-actions';
 import type { AdminAuthConfig } from './admin-auth/admin-auth.types';
 import type { DocsAuthCheck, DocsConfig } from './docs/docs.types';
 import type { DriverConfig } from './driver/driver.types';
@@ -88,6 +89,17 @@ export interface SimCoreConfig {
    * because the platform polls the first three and automation drives the last.
    */
   adminAuth?: AdminAuthConfig;
+
+  // --- v0.5.0 -----------------------------------------------------------
+
+  /**
+   * Buttons for this sim's own `/__control/*` routes, rendered on `/admin`
+   * under "Manual controls". Optional and purely presentational: the routes
+   * themselves are registered by the consumer as before, and omitting this
+   * leaves them working exactly as they did (curl-only). See
+   * {@link AdminAction}; every `path` must sit under `/__control/`.
+   */
+  adminActions?: AdminAction[];
 }
 
 const TOKEN_MIN_LENGTH = 16;
@@ -139,6 +151,7 @@ export function normalizeSimCoreConfig(config: SimCoreConfig): Required<
   // bootstrap rather than at the first sign-in attempt. Absent or disabled,
   // this validates nothing at all — that is what keeps v0.2.0 configs working.
   resolveAdminAuthConfig(config.adminAuth);
+  validateAdminActions(config.adminActions);
 
   return {
     ...config,

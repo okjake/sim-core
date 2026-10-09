@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.SIM_CORE_CONFIG = void 0;
 exports.normalizeSimCoreConfig = normalizeSimCoreConfig;
 const admin_auth_config_1 = require("./admin-auth/admin-auth.config");
+const admin_actions_1 = require("./control/admin-actions");
 /** DI token for the resolved {@link SimCoreConfig}. */
 exports.SIM_CORE_CONFIG = 'SIM_CORE_CONFIG';
 const TOKEN_MIN_LENGTH = 16;
@@ -43,6 +44,7 @@ function normalizeSimCoreConfig(config) {
     // bootstrap rather than at the first sign-in attempt. Absent or disabled,
     // this validates nothing at all — that is what keeps v0.2.0 configs working.
     (0, admin_auth_config_1.resolveAdminAuthConfig)(config.adminAuth);
+    (0, admin_actions_1.validateAdminActions)(config.adminActions);
     return {
         ...config,
         version: config.version ?? '0.0.0',

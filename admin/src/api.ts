@@ -14,10 +14,52 @@ export interface Brand {
   adminAuth?: boolean;
 }
 
+/** Mirrors `ScenarioAdminMeta` on the server. Every field optional. */
+export interface ScenarioAdminMeta {
+  title?: string;
+  triggers?: string[];
+  group?: string;
+  durable?: boolean;
+  undo?: string;
+  defaultTtlSeconds?: number;
+  order?: number;
+}
+
 export interface ScenarioListing {
   id: string;
   description: string;
   params: ParamDescription | null;
+  /** v0.5.0. Absent on an older server, `null` when undeclared. */
+  admin?: ScenarioAdminMeta | null;
+}
+
+/** Mirrors `AdminAction` on the server. */
+export interface AdminAction {
+  id: string;
+  title: string;
+  description: string;
+  triggers?: string[];
+  path: string;
+  submitLabel?: string;
+  choice?: {
+    name: string;
+    label: string;
+    options: string[];
+    currentPath?: string;
+    currentKey?: string;
+  };
+  confirm?: string;
+  persistent?: boolean;
+}
+
+export interface RecordedWebhook {
+  seq: number;
+  at: string;
+  path: string;
+  event: string | null;
+  verified: boolean;
+  status: number;
+  body: unknown;
 }
 
 export interface ParamDescription {
@@ -60,6 +102,11 @@ export interface ControlState {
     totalRequests: number;
     totalFailures: number;
     capHits: number;
+    emptySteps?: number;
+    defaultMode?: string;
+    seed?: number | null;
+    requestMutators?: number;
+    lastRequestAt?: string | null;
     currentFlow: string | null;
     override: { mode: string; multiplier: number; remainingSeconds: number } | null;
     flows: Record<string, { runs: number; requests: number; failures: number }>;
@@ -142,6 +189,13 @@ export class ApiError extends Error {
 
 const CONTROL_BASE = '/__control';
 
+function controlRelative(path: string): string {
+  if (!path.startsWith(`${CONTROL_BASE}/`) || path.includes('..') || path.includes('%')) {
+    throw new ApiError(400, `refusing to call ${path}: not a control route`);
+  }
+  return path.slice(CONTROL_BASE.length);
+}
+
 /**
  * `token` is `''` in session mode (`adminAuth` on, nothing pasted): the
  * bearer header is omitted entirely and the request relies on the browser
@@ -205,6 +259,22 @@ export const api = {
   driver: (token: string, body: { mode: string; multiplier?: number; ttlSeconds: number }) =>
     call<ControlState>(token, '/driver', { method: 'POST', body }),
   reset: (token: string) => call<ControlState>(token, '/reset', { method: 'POST' }),
+  /** v0.5.0. An older server 404s; the SPA treats that as "no actions". */
+  actions: (token: string) =>
+    call<{ actions: AdminAction[] }>(token, '/actions').then((r) => r.actions),
+  webhooks: (token: string, limit = 50) =>
+    call<{ capacity: number; size: number; webhooks: RecordedWebhook[] }>(
+      token,
+      `/webhooks?limit=${limit}`,
+    ),
+  /**
+   * Run a sim-declared action. `path` is validated server-side at bootstrap to
+   * sit under `/__control/`; it is re-checked here so a malformed payload can
+   * never send the operator's credential anywhere else.
+   */
+  runAction: (token: string, path: string, body?: Record<string, string>) =>
+    call<unknown>(token, controlRelative(path), { method: 'POST', body }),
+  readAction: (token: string, path: string) => call<unknown>(token, controlRelative(path)),
 
   docs: {
     status: (token: string) => call<DocsStatus>(token, '/docs'),

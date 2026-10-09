@@ -19,8 +19,33 @@ One `SimCoreModule.forRoot(config)` import gives a NestJS service:
   `/__control`** — one tier for humans instead of two (see below).
   **v0.4.1** corrects the boot-log line for this (it still said `/__control`
   was unaffected); no behavior change.
+- **v0.5.0** — a redesigned **`/admin`** (status first, scenarios as a
+  runbook, manual controls, activity, advanced, danger zone) plus two
+  additive, optional hooks for it: `Scenario.admin` metadata and
+  `SimCoreConfig.adminActions`. No route, scenario or default changed.
 
 ---
+
+## What changed in v0.5.0
+
+The admin SPA was redesigned around what an operator asks first: *what is this
+sim doing right now*, and *run scenario X now*. The critique and the full
+before/after function map are in
+[`docs/admin-ux-review.md`](docs/admin-ux-review.md). Nothing on the server
+changed behaviour; everything below is additive and optional.
+
+| Added | Opt-in? |
+|---|---|
+| `Scenario.admin` (`ScenarioAdminMeta`: `title`, `triggers`, `group`, `durable`, `undo`, `defaultTtlSeconds`, `order`) — presentation only | yes — a scenario without it lists and runs as before |
+| `admin` field on each `GET /__control/scenarios` entry (`null` when undeclared) | no — additive field |
+| Admin metadata on the four built-ins (`Error storm`, `Full outage`, `Slow responses`, `Reject all credentials`) | no — presentation only |
+| `SimCoreConfig.adminActions` (`AdminAction[]`) — buttons for a consumer's own `/__control/*` routes, validated at bootstrap to stay under `/__control/` | yes |
+| `GET /__control/actions` → `{ actions }` | no — additive route, behind the control guard |
+| SPA: status header, runbook, received-webhooks view, confirmations on permanent and destructive actions | no |
+
+A consumer that repins without touching its config gets the new layout with
+its scenarios under a generic "Scenarios" heading, titled by id.
+
 
 ## What changed in v0.4.0
 
@@ -400,6 +425,16 @@ because the failure mode of a half-configured gate is an admin console open to
 the internet. An **absent or disabled** `adminAuth` is validated not at all,
 which is what keeps a v0.2.0 config working untouched.
 
+**v0.5.0 — `adminActions`.** An optional `AdminAction[]` that puts a button on
+`/admin` for a route the consumer already registered under `/__control/`
+(Staybase's `push-metrics`, Pebblepay's `auth-scheme`). It registers nothing:
+each entry is `{ id, title, description, path, triggers?, submitLabel?,
+confirm?, persistent?, choice? }`, where `choice` (`{ name, label, options,
+currentPath?, currentKey? }`) sends `{ [name]: value }` as the POST body and
+can read the current value from a GET. Bootstrap throws on a duplicate id, a
+missing title, or a `path`/`currentPath` outside `/__control/`, because the SPA
+sends the operator's credential to it.
+
 `openapi` stays **required even with docs enabled**. It is the fallback served
 at `/openapi.json` before anything has been published, so a sim always answers
 a spec probe with something valid.
@@ -413,7 +448,18 @@ interface Scenario<P = any> {
   id: string;
   description: string;
   params?: ParamSchema<P>;                       // optional; see "Params" below
+  admin?: ScenarioAdminMeta;                     // v0.5.0, optional; /admin presentation only
   apply(ctx: ScenarioContext, params: P): RevertFn | Promise<RevertFn>;
+}
+
+interface ScenarioAdminMeta {                    // every field optional
+  title?: string;               // 'Error storm' — defaults to the id
+  triggers?: string[];          // Partner API automations it should set off
+  group?: string;               // runbook section; built-ins use 'Generic faults'
+  durable?: boolean;            // effect does not revert at TTL — SPA confirms; duration moves under Options
+  undo?: string;                // how to undo a durable scenario
+  defaultTtlSeconds?: number;   // pre-selected duration (default 300)
+  order?: number;               // sort within the group
 }
 
 interface ScenarioContext {
@@ -424,7 +470,7 @@ interface ScenarioContext {
   service: { name: string; brand: SimBrand };
 }
 
-interface ScenarioListing { id: string; description: string; params: unknown | null }
+interface ScenarioListing { id: string; description: string; params: unknown | null; admin: ScenarioAdminMeta | null }
 
 interface ActiveScenarioState {
   id: string; description: string; params: unknown;
@@ -1158,7 +1204,8 @@ from `/openapi.json`.
 | Method / path | Body | Behaviour |
 |---|---|---|
 | `GET /__control/state` | — | active scenario + TTL remaining, chaos rules, driver status + override, baseline summary, request-tail size, available scenario ids |
-| `GET /__control/scenarios` | — | `{ scenarios: [{ id, description, params }] }` — `params` is the described schema or `null` |
+| `GET /__control/scenarios` | — | `{ scenarios: [{ id, description, params, admin }] }` — `params` is the described schema or `null`; `admin` (v0.5.0) is the scenario's `ScenarioAdminMeta` or `null` |
+| `GET /__control/actions` | — | **v0.5.0.** `{ actions: AdminAction[] }` — the consumer's declared `adminActions`, `[]` when none |
 | `GET /__control/requests?limit=` | — | `{ requests: RequestTailEntry[] }`, newest first, default limit 50 (**addition to the spec table** — the admin SPA's request tail reads it) |
 | `POST /__control/scenario` | `{ scenario, params?, ttlSeconds }` | activate; **`ttlSeconds` required, 1..86400**; auto-reverts at expiry; replaces any active scenario. Returns the new state |
 | `POST /__control/driver` | `{ mode, multiplier?, ttlSeconds }` | driver override, same TTL rules. `mode` ∈ `baseline` \| `burst` \| `paused`; `multiplier` 1..100 and only meaningful for `burst`. Returns the new state |
@@ -1237,13 +1284,30 @@ curl -s -X POST -H "Authorization: Bearer $CONTROL_TOKEN" localhost:3000/__contr
 Vite + React, built into `dist/public` at package build time and served
 statically by the Nest app.
 
-**Control tab**
+**Control tab** (redesigned in v0.5.0, top to bottom)
 
-- control-token entry, kept in `localStorage`, sent as a bearer token
-- live state panel, polled every 5s
-- scenario list + activate form with a required TTL field
-- driver controls (mode, multiplier, TTL) and live rate/cap counters
-- request tail
+- **Status** — at baseline, or what is running and when it reverts (a live
+  countdown), plus traffic facts: for a driver sim its target rate, requests
+  in the last minute, failures and last send; for a receive-only sim the
+  requests received in the last minute, the 4xx/5xx share and the last request
+  (admin and health-check traffic excluded). **Stop and reset to baseline**
+  lives here.
+- **Scenarios** — a runbook grouped by `admin.group`, each with its title,
+  description, "Triggers" (the Partner API automation it should set off), a
+  duration picker (1 min – 24 h, or custom seconds) and **Run**. Parameters
+  keep their defaults under a collapsed **Options**. Permanent scenarios
+  (`admin.durable`) say so, show their undo and always confirm; starting a
+  scenario while another runs asks before replacing it.
+- **Manual controls** — the traffic driver override (burst/pause/baseline,
+  multiplier, duration) and one control per `adminActions` entry.
+- **Activity** — requests received (admin/health traffic hidden unless asked
+  for) and webhooks received, with their bodies.
+- **Advanced** (collapsed) — driver counters, per-flow stats, fault rules and
+  the full state JSON.
+- **Danger zone** — **Reset docs from content/** (docs-enabled sims only),
+  confirmed.
+- control-token entry, kept in `localStorage`, sent as a bearer token; state
+  polled every 5s.
 
 **Docs tab** (v0.2.0 — only shown when `/__admin/brand` reports `docs: true`)
 
@@ -1255,7 +1319,8 @@ statically by the Nest app.
   or date (changelog), a published toggle, and a **Preview** button that renders
   through `POST /__control/docs/preview` — the same server-side renderer the
   public pages use, so the preview cannot lie.
-- **Reset from content/**, behind a confirmation, and a link to the public docs.
+- **Reset docs…**, behind a confirmation, and a link to the public docs.
+  Publishing a spec version and deleting anything are confirmed too (v0.5.0).
 
 Themed with `brand.color`; light and dark. Set `admin: false` in the config to
 skip serving it.
