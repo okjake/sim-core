@@ -2,9 +2,8 @@ import { useCallback, useEffect, useState, type ReactElement } from 'react';
 
 import { api, type AdminAction, type ControlState } from './api';
 import { useConfirm } from './confirm';
-import { clock, duration, errorMessage } from './format';
-
-const DURATIONS = [60, 300, 900, 1800, 3600];
+import DurationPicker, { durationSeconds, initialDuration } from './Duration';
+import { clock, errorMessage } from './format';
 
 interface Props {
   token: string;
@@ -47,18 +46,20 @@ function TrafficControl({ token, state, fetchedAt, now, onChanged }: Props): Rea
   const driver = state.driver;
   const [mode, setMode] = useState<Mode>('burst');
   const [multiplier, setMultiplier] = useState('3');
-  const [ttl, setTtl] = useState('300');
+  const [ttlValue, setTtlValue] = useState(() => initialDuration(300));
+  const ttl = durationSeconds(ttlValue);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const apply = async (): Promise<void> => {
+    if (ttl === null) return;
     setBusy(true);
     setError(null);
     try {
       await api.driver(token, {
         mode,
         multiplier: mode === 'burst' ? Number(multiplier) : undefined,
-        ttlSeconds: Number(ttl),
+        ttlSeconds: ttl ?? 300,
       });
       onChanged();
     } catch (err) {
@@ -86,13 +87,12 @@ function TrafficControl({ token, state, fetchedAt, now, onChanged }: Props): Rea
         {driver.maxRequestsPerMinute}/min always applies.
         {override ? ` Current override ends in ${clock(left)}.` : ''}
       </p>
-      <div className="segmented" role="radiogroup" aria-label="Traffic mode">
+      <div className="segmented" role="group" aria-label="Traffic mode">
         {MODES.map((m) => (
           <button
             key={m.id}
             type="button"
-            role="radio"
-            aria-checked={mode === m.id}
+            aria-pressed={mode === m.id}
             className={mode === m.id ? 'seg is-on' : 'seg'}
             onClick={() => setMode(m.id)}
           >
@@ -115,19 +115,12 @@ function TrafficControl({ token, state, fetchedAt, now, onChanged }: Props): Rea
           </div>
         ) : null}
         <div className="field">
-          <label htmlFor="driver-ttl">For</label>
-          <select id="driver-ttl" value={ttl} onChange={(e) => setTtl(e.target.value)}>
-            {DURATIONS.map((seconds) => (
-              <option key={seconds} value={seconds}>
-                {duration(seconds)}
-              </option>
-            ))}
-          </select>
+          <DurationPicker id="driver-ttl" label="For" value={ttlValue} onChange={setTtlValue} />
         </div>
         <button
           type="button"
           className="primary"
-          disabled={busy || (mode === 'burst' && !multiplierValid)}
+          disabled={busy || ttl === null || (mode === 'burst' && !multiplierValid)}
           onClick={() => void apply()}
         >
           {busy ? 'Applying…' : 'Apply'}

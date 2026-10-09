@@ -64,6 +64,8 @@ function isControlPath(path: unknown): path is string {
     path.startsWith(CONTROL_PREFIX) &&
     path.length > CONTROL_PREFIX.length &&
     !path.includes('..') &&
+    // Browsers normalise `%2e%2e` segments to `..`; no control route needs `%`.
+    !path.includes('%') &&
     !path.includes('?') &&
     !path.includes('#')
   );

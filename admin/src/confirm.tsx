@@ -29,7 +29,9 @@ export function ConfirmProvider({ children }: { children: ReactNode }): ReactEle
     resolver.current?.(false);
     setRequest(next);
     // Open after React has rendered the new content into the dialog.
-    queueMicrotask(() => ref.current?.showModal());
+    queueMicrotask(() => {
+      if (ref.current && !ref.current.open) ref.current.showModal();
+    });
     return new Promise<boolean>((resolve) => {
       resolver.current = resolve;
     });

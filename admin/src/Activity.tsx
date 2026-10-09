@@ -11,6 +11,16 @@ function statusClass(status: number): string {
   return 's2';
 }
 
+/** Local wall-clock time, matching the status header's "reverts at". */
+function localTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+}
+
 function readFlag(key: string): boolean {
   try {
     return localStorage.getItem(key) === '1';
@@ -45,11 +55,10 @@ export default function Activity({
     <section className="section" aria-labelledby="activity-h">
       <div className="section-head row-between">
         <h2 id="activity-h">Activity</h2>
-        <div className="segmented small" role="tablist" aria-label="Activity view">
+        <div className="segmented small" role="group" aria-label="Activity view">
           <button
             type="button"
-            role="tab"
-            aria-selected={view === 'requests'}
+            aria-pressed={view === 'requests'}
             className={view === 'requests' ? 'seg is-on' : 'seg'}
             onClick={() => setView('requests')}
           >
@@ -57,8 +66,7 @@ export default function Activity({
           </button>
           <button
             type="button"
-            role="tab"
-            aria-selected={view === 'webhooks'}
+            aria-pressed={view === 'webhooks'}
             className={view === 'webhooks' ? 'seg is-on' : 'seg'}
             onClick={() => setView('webhooks')}
           >
@@ -114,10 +122,15 @@ export default function Activity({
                 ) : null}
                 {visible.map((entry) => (
                   <tr key={entry.seq}>
-                    <td className="mono c-time">{entry.at.slice(11, 19)}</td>
+                    <td className="mono c-time" title={entry.at}>
+                      {localTime(entry.at)}
+                    </td>
                     <td className="mono c-method">{entry.method}</td>
                     <td className="mono c-path" title={entry.path}>
                       {entry.path}
+                      {entry.chaos?.length ? (
+                        <span className="fault-inline">{entry.chaos.join(', ')}</span>
+                      ) : null}
                     </td>
                     <td className={`mono num c-status ${statusClass(entry.status)}`}>{entry.status}</td>
                     <td className="mono num c-latency">{entry.latencyMs}ms</td>
@@ -153,7 +166,9 @@ function Webhooks({ webhooks }: { webhooks: RecordedWebhook[] | null }): ReactEl
         <li key={hook.seq}>
           <details>
             <summary>
-              <span className="mono">{hook.at.slice(11, 19)}</span>
+              <span className="mono" title={hook.at}>
+                {localTime(hook.at)}
+              </span>
               <span className="hook-event">{hook.event ?? 'unknown event'}</span>
               <span className={`tag ${hook.verified ? 'ok' : 'err'}`}>
                 {hook.verified ? 'signature ok' : 'rejected'}

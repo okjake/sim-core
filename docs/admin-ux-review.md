@@ -105,8 +105,8 @@ One page, top to bottom, in the order an operator asks:
    - receive-only sims: received last minute, 4xx/5xx share of recent
      requests, last request, with admin and health traffic excluded;
    - uptime and version.
-   **Stop and reset to baseline** is here: red when something is running,
-   disabled when there is nothing to stop.
+   **Stop and reset to baseline** is here: red when something is running. It stays
+   enabled at baseline, because reset also clears the driver run.
 2. **Scenarios** as a runbook, grouped by purpose, the sim's own groups first
    and the generic built-ins last. Each row shows:
    - a human title, plus the id for people who script it;
@@ -117,7 +117,7 @@ One page, top to bottom, in the order an operator asks:
    Parameters keep their defaults under a collapsed **Options**, whose summary
    shows any value you changed. The running row is highlighted with its own
    countdown and **Restart**. Permanent scenarios are tagged, show their undo,
-   hide the meaningless duration and always confirm. Starting a scenario while
+   move the run-slot duration under Options and always confirm. Starting a scenario while
    another runs asks first.
 3. **Manual controls**: the traffic override as a segmented control
    (Burst / Pause / Baseline) with multiplier and duration, then one control
@@ -180,7 +180,7 @@ Every control on the old page, and where it is now.
 | Control-token gate (paste, localStorage, bearer) | Unchanged |
 | Session mode (Google gate authorizes `/__control`), one-shot 401 recovery, fallback to token gate | Unchanged (same code) |
 | Forget token / Sign out | Header, unchanged conditions |
-| Reset to baseline | Status header: **Stop and reset to baseline** |
+| Reset to baseline | Status header: **Stop and reset to baseline**, always enabled (it also clears the driver run); on the Docs tab, **Reset to baseline** in the header |
 | Live state: baseline pill | Status headline; detail in Advanced |
 | Live state: active scenario, reverts in, params | Status headline + countdown; running row in runbook; params in Advanced |
 | Live state: chaos rule count | Advanced (plus the rules themselves) |
@@ -188,8 +188,8 @@ Every control on the old page, and where it is now.
 | Activate scenario: select | Runbook row per scenario |
 | Activate scenario: description | Row description |
 | Activate scenario: every param field, typed, enum selects | Row → Options (same fields, same coercion, plus min/max) |
-| Activate scenario: ttlSeconds (1–86400) | Duration picker: presets 1 min – 24 h, or custom seconds 1–86400 |
-| Traffic driver: mode / multiplier / ttlSeconds / Apply | Manual controls → Traffic (same values; durations 1 min – 1 h) |
+| Activate scenario: ttlSeconds (1–86400) | Duration picker: presets 1 min – 24 h, or custom seconds 1–86400. Permanent scenarios: the same picker under Options as "Run slot", default 60 s |
+| Traffic driver: mode / multiplier / ttlSeconds / Apply | Manual controls → Traffic (same values; the same 1 min – 24 h presets or custom 1–86400 s) |
 | Traffic driver: mode pill | Traffic tag; status headline when overridden |
 | Traffic driver: rate effective / cap | Status "Target rate (cap N)"; Advanced (effective / baseline / cap) |
 | Traffic driver: last minute | Status "Sent last minute" |
@@ -206,18 +206,26 @@ Every control on the old page, and where it is now.
 | *(new)* Staybase `POST /__control/push-metrics` | Manual controls → Push metrics now |
 | *(new)* Pebblepay `/__control/auth-scheme` | Manual controls → Credential scheme (shows current) |
 | *(new)* driver per-flow stats, current flow, mutators, seed | Advanced |
+| Header tagline | Header, after "sim admin" |
 
-The default duration for the traffic override presets tops out at 1 hour (the
-old field allowed any 1–86400). A longer override is still one scenario away
-(`traffic-burst`/`paused` on Bookbridge take 24 h), or one curl.
+Request and webhook times are shown in local time (hover for the ISO
+timestamp), matching the status header. The old tail sliced UTC.
+
+**Known limits of the status header.** "At baseline" means no scenario, fault
+rule or traffic override. It cannot see durable changes: a published spec
+version, or Pebblepay's credential scheme. The copy says so, and the
+permanent-scenario line says that Stop does not undo it.
 
 ## Deploying
 
 The sims pin sim-core by git ref, and `dist/` is committed, so:
 
 1. Merge this repo's PR, then tag `v0.5.0` (annotated) on `main`.
-2. In each sim: repin `@okjake/sim-core` to `#v0.5.0` (the draft PRs pin the
-   branch commit), `pnpm install`, merge. Render redeploys each service on
+2. In each sim: repin `@okjake/sim-core` to `#v0.5.0`, `pnpm install`, merge.
+   **Do not merge a sim while it still pins the branch commit.** That commit
+   exists only on `feat/admin-ux`. After a squash merge and a branch delete
+   it can be garbage-collected, and Render's install would fail. Bookbridge's
+   `test/backcompat.spec.ts` asserts the ref, so update it too. Render redeploys each service on
    merge (`render.yaml`, auto-deploy).
 3. Nothing else: no env var, disk or schedule changes. Staybase moves from
    v0.4.1 and Pebblepay from v0.4.2, so they also pick up v0.4.2 (rendered API

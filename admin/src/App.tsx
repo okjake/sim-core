@@ -238,7 +238,9 @@ function Admin(): ReactElement {
         <div className="brand">
           <span className="dot" aria-hidden="true" />
           <h1>{brand?.brand.displayName ?? 'sim'}</h1>
-          <span className="brand-sub">sim admin</span>
+          <span className="brand-sub">
+            sim admin{brand?.brand.tagline ? ` · ${brand.brand.tagline}` : ''}
+          </span>
         </div>
         {token !== null && docsEnabled ? (
           <nav className="tabs" aria-label="Sections">
@@ -262,6 +264,12 @@ function Admin(): ReactElement {
         ) : null}
         <span className="spacer" />
         <div className="session">
+          {/* The kill switch stays one click away while editing docs. */}
+          {token !== null && docsEnabled && tab === 'docs' ? (
+            <button className="ghost small" type="button" disabled={resetting} onClick={() => void reset()}>
+              Reset to baseline
+            </button>
+          ) : null}
           {/* A real pasted token, session or not — nothing to "forget" once the
               only credential in play is the Google session. */}
           {storedToken ? (

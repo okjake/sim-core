@@ -46,7 +46,8 @@ export interface ScenarioAdminMeta {
   /**
    * The scenario's effect does NOT revert at TTL expiry (its revert is a
    * deliberate no-op), e.g. publishing a spec version. The SPA marks it
-   * permanent, hides the duration picker and always asks before running it.
+   * permanent, moves the duration picker under Options (the run slot only) and
+   * always asks before running it.
    */
   durable?: boolean;
   /** How to undo a durable scenario, e.g. `Reset docs (Danger zone)`. */

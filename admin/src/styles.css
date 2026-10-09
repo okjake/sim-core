@@ -481,12 +481,7 @@ li.run.is-active + li.run {
 }
 
 .ttl {
-  display: flex;
-  gap: 6px;
-}
-
-.ttl select {
-  width: auto;
+  display: block;
 }
 
 .ttl-custom {
@@ -1280,5 +1275,34 @@ textarea.code {
 
   .section {
     padding: 16px;
+  }
+}
+
+/* --- review fixes -------------------------------------------------------- */
+
+.ttl-inputs {
+  display: flex;
+  gap: 6px;
+}
+
+.ttl-inputs select {
+  width: auto;
+  flex: 1 1 auto;
+}
+
+.fault-inline {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  td.c-path {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .fault-inline {
+    display: block;
+    color: var(--err);
+    font-size: 11px;
   }
 }

@@ -2,18 +2,16 @@ import { useEffect, useMemo, useState, type ReactElement } from 'react';
 
 import { api, type ControlState, type ParamDescription, type ScenarioListing } from './api';
 import { useConfirm } from './confirm';
-import { clock, duration, errorMessage } from './format';
+import DurationPicker, { durationSeconds, initialDuration } from './Duration';
+import { clock, errorMessage } from './format';
 import { scenarioTitle } from './StatusHeader';
 
-/** The control plane's TTL bounds (`control.dto.ts`). */
-const TTL_MIN = 1;
-const TTL_MAX = 86_400;
-const DURATIONS = [60, 300, 900, 1800, 3600, 4 * 3600, 24 * 3600];
 const DEFAULT_TTL = 300;
 /**
  * A durable scenario's effect never reverts, but the control plane still
- * requires a TTL for the slot it occupies. A minute keeps the status header
- * honest without blocking the next run for long.
+ * requires a TTL for the slot it occupies. A minute by default keeps the
+ * status header honest without holding the slot for long; it is adjustable
+ * under Options for anything that keys off the run window.
  */
 const DURABLE_SLOT_TTL = 60;
 const BUILTIN_GROUP = 'Generic faults';
@@ -142,12 +140,8 @@ function ScenarioRow({
   const meta = scenario.admin ?? {};
   const title = meta.title ?? scenario.id;
   const durable = meta.durable === true;
-  const initialTtl = meta.defaultTtlSeconds ?? DEFAULT_TTL;
-
-  const [ttlChoice, setTtlChoice] = useState<string>(
-    DURATIONS.includes(initialTtl) ? String(initialTtl) : 'custom',
-  );
-  const [customTtl, setCustomTtl] = useState(String(initialTtl));
+  const initialTtl = meta.defaultTtlSeconds ?? (durable ? DURABLE_SLOT_TTL : DEFAULT_TTL);
+  const [ttlValue, setTtlValue] = useState(() => initialDuration(initialTtl));
   const [values, setValues] = useState<Record<string, string>>(() => defaultsFor(scenario.params));
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -161,8 +155,16 @@ function ScenarioRow({
   const changed = fields.filter(([key]) => (values[key] ?? '') !== (defaults[key] ?? ''));
   const active = state.scenario?.id === scenario.id ? state.scenario : null;
   const other = state.scenario && !active ? state.scenario : null;
-  const ttl = durable ? DURABLE_SLOT_TTL : Number(ttlChoice === 'custom' ? customTtl : ttlChoice);
-  const ttlValid = Number.isInteger(ttl) && ttl >= TTL_MIN && ttl <= TTL_MAX;
+  const ttl = durationSeconds(ttlValue);
+  const ttlValid = ttl !== null;
+  const otherMeta = other ? scenarios.find((s) => s.id === other.id)?.admin : null;
+  const otherLeft = other ? other.remainingSeconds - (now - fetchedAt) / 1000 : 0;
+  /** What replacing the running scenario does — its effect stays if it was permanent. */
+  const replaceNote = other
+    ? otherMeta?.durable
+      ? `${scenarioTitle(other.id, scenarios)} still holds the run slot. Its effect is permanent and stays; only the slot ends.`
+      : `${scenarioTitle(other.id, scenarios)} is running with ${clock(otherLeft)} left. Only one scenario runs at a time: starting ${title} ends it now.`
+    : null;
 
   const run = async (): Promise<void> => {
     if (durable) {
@@ -172,25 +174,21 @@ function ScenarioRow({
           <>
             <p>{scenario.description}</p>
             <p>
-              <strong>This is permanent.</strong> It does not revert when its time is up.
+              <strong>This is permanent.</strong> It does not revert when its time is up, and Stop
+              and reset does not undo it.
               {meta.undo ? ` To undo it: ${meta.undo}.` : ''}
             </p>
+            {replaceNote ? <p>{replaceNote}</p> : null}
           </>
         ),
         confirmLabel: 'Run, permanently',
         tone: 'danger',
       });
       if (!ok) return;
-    } else if (other) {
-      const left = other.remainingSeconds - (now - fetchedAt) / 1000;
+    } else if (other && replaceNote) {
       const ok = await confirm({
         title: `Replace ${scenarioTitle(other.id, scenarios)}?`,
-        body: (
-          <p>
-            {scenarioTitle(other.id, scenarios)} is running with {clock(left)} left. Only one scenario
-            runs at a time: starting {title} ends it now.
-          </p>
-        ),
+        body: <p>{replaceNote}</p>,
         confirmLabel: `Replace with ${title}`,
       });
       if (!ok) return;
@@ -205,6 +203,7 @@ function ScenarioRow({
         if (raw === undefined || raw === '') continue;
         params[key] = field.type === 'number' ? Number(raw) : raw;
       }
+      if (ttl === null) return;
       await api.activate(token, { scenario: scenario.id, params, ttlSeconds: ttl });
       onChanged();
     } catch (err) {
@@ -284,6 +283,16 @@ function ScenarioRow({
                   )}
                 </div>
               ))}
+              {durable ? (
+                <div className="field">
+                  <DurationPicker
+                    id={`ttl-${scenario.id}`}
+                    label="Run slot (the effect itself is permanent)"
+                    value={ttlValue}
+                    onChange={setTtlValue}
+                  />
+                </div>
+              ) : null}
               {changed.length > 0 ? (
                 <button type="button" className="link-button" onClick={() => setValues(defaults)}>
                   Restore defaults
@@ -301,35 +310,14 @@ function ScenarioRow({
 
       <div className="run-controls">
         {durable ? null : (
-          <div className="ttl">
-            <label htmlFor={`ttl-${scenario.id}`} className="visually-hidden">
-              How long {title} runs
-            </label>
-            <select
-              id={`ttl-${scenario.id}`}
-              value={ttlChoice}
-              onChange={(e) => setTtlChoice(e.target.value)}
-            >
-              {DURATIONS.map((seconds) => (
-                <option key={seconds} value={seconds}>
-                  for {duration(seconds)}
-                </option>
-              ))}
-              <option value="custom">custom…</option>
-            </select>
-            {ttlChoice === 'custom' ? (
-              <input
-                aria-label={`Seconds ${title} runs (1 to 86400)`}
-                type="number"
-                min={TTL_MIN}
-                max={TTL_MAX}
-                value={customTtl}
-                onChange={(e) => setCustomTtl(e.target.value)}
-                className="ttl-custom"
-                placeholder="seconds"
-              />
-            ) : null}
-          </div>
+          <DurationPicker
+            id={`ttl-${scenario.id}`}
+            label={`How long ${title} runs`}
+            value={ttlValue}
+            onChange={setTtlValue}
+            prefix="for "
+            hideLabel
+          />
         )}
         <button
           type="button"

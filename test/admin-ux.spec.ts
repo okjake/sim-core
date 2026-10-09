@@ -98,6 +98,7 @@ describe('admin UX surfaces (v0.5.0)', () => {
       ['a path outside /__control/', { ...pushMetrics, path: '/v1/charges/ch_000000000001' }],
       ['the bare /__control/ prefix', { ...pushMetrics, path: '/__control/' }],
       ['a path that climbs out with ..', { ...pushMetrics, path: '/__control/../v1/charges' }],
+      ['an encoded path that climbs out', { ...pushMetrics, path: '/__control/%2e%2e/v1/charges/x' }],
       ['a path carrying a query string', { ...pushMetrics, path: '/__control/x?y=1' }],
       ['a missing title', { ...pushMetrics, title: '' }],
       ['a missing id', { ...pushMetrics, id: '' }],

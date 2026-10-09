@@ -45,7 +45,7 @@ export default function StatusHeader({
       key: 'scenario',
       title: `${scenarioTitle(scenario.id, scenarios)} is running`,
       detail: scenarioMeta?.durable
-        ? 'Permanent: its effect stays after this run ends.'
+        ? `Permanent: Stop ends the run but does not undo it.${scenarioMeta.undo ? ` Undo: ${scenarioMeta.undo}.` : ''}`
         : `Reverts in ${clock(left)}, at ${wallClock(fetchedAt + scenario.remainingSeconds * 1000)}`,
     });
   }
@@ -75,11 +75,19 @@ export default function StatusHeader({
     <section className={`status ${atBaseline ? 'is-baseline' : 'is-modified'}`} aria-label="Status">
       <div className="status-main">
         <span className="status-light" aria-hidden="true" />
-        <div className="status-text" aria-live="polite">
+        {/* Announce what changed, not the countdown: the visible text re-renders
+            every second, so the live region holds the titles only. */}
+        <p className="visually-hidden" aria-live="polite">
+          {atBaseline ? 'At baseline' : lines.map((line) => line.title).join('. ')}
+        </p>
+        <div className="status-text">
           {atBaseline ? (
             <>
               <p className="status-title">At baseline</p>
-              <p className="status-detail">Normal traffic, no faults. Pick a scenario below to change that.</p>
+              <p className="status-detail">
+                No scenario, fault rule or traffic override running. Permanent changes (published
+                specs, sim settings) aren’t tracked here.
+              </p>
             </>
           ) : (
             lines.map((line) => (
@@ -93,8 +101,8 @@ export default function StatusHeader({
         <button
           type="button"
           className={atBaseline ? 'ghost' : 'danger'}
-          disabled={busy || atBaseline}
-          title={atBaseline ? 'Already at baseline' : undefined}
+          disabled={busy}
+          title={atBaseline ? 'Nothing is running; reset still clears the driver run and any stray state' : undefined}
           onClick={onReset}
         >
           Stop and reset to baseline
@@ -115,6 +123,7 @@ function Facts({
   now: number;
 }): ReactElement {
   const driver = state.driver;
+  const capacity = state.requestTail.capacity;
   const facts: Array<{ label: string; value: string; tone?: 'warn' | 'err' }> = [];
 
   if (driver.configured) {
@@ -136,7 +145,12 @@ function Facts({
     const lastMinute = domain.filter((entry) => now - Date.parse(entry.at) <= 60_000).length;
     const s4 = domain.filter((entry) => entry.status >= 400 && entry.status < 500).length;
     const s5 = domain.filter((entry) => entry.status >= 500).length;
-    facts.push({ label: 'Received', value: `${lastMinute} in the last minute` });
+    // The tail is a ring buffer: if even its oldest entry is under a minute
+    // old, the true count may be higher than what it still holds.
+    const oldest = tail[tail.length - 1];
+    const saturated =
+      tail.length > 0 && tail.length >= capacity && oldest !== undefined && now - Date.parse(oldest.at) < 60_000;
+    facts.push({ label: 'Received', value: `${saturated ? '≥' : ''}${lastMinute} in the last minute` });
     facts.push({
       label: `Errors (last ${domain.length})`,
       value: `${percent(s4, domain.length)} 4xx · ${percent(s5, domain.length)} 5xx`,

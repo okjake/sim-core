@@ -456,7 +456,7 @@ interface ScenarioAdminMeta {                    // every field optional
   title?: string;               // 'Error storm' — defaults to the id
   triggers?: string[];          // Partner API automations it should set off
   group?: string;               // runbook section; built-ins use 'Generic faults'
-  durable?: boolean;            // effect does not revert at TTL — SPA confirms and hides the duration
+  durable?: boolean;            // effect does not revert at TTL — SPA confirms; duration moves under Options
   undo?: string;                // how to undo a durable scenario
   defaultTtlSeconds?: number;   // pre-selected duration (default 300)
   order?: number;               // sort within the group

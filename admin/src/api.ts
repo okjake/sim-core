@@ -190,7 +190,7 @@ export class ApiError extends Error {
 const CONTROL_BASE = '/__control';
 
 function controlRelative(path: string): string {
-  if (!path.startsWith(`${CONTROL_BASE}/`) || path.includes('..')) {
+  if (!path.startsWith(`${CONTROL_BASE}/`) || path.includes('..') || path.includes('%')) {
     throw new ApiError(400, `refusing to call ${path}: not a control route`);
   }
   return path.slice(CONTROL_BASE.length);
