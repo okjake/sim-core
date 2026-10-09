@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   HttpCode,
+  Inject,
   NotFoundException,
   Optional,
   Post,
@@ -10,6 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 
+import { SIM_CORE_CONFIG, type SimCoreConfig } from '../config';
 import { DocsService } from '../docs/docs.service';
 import type { SeedResult } from '../docs/docs.seed';
 import {
@@ -21,6 +23,7 @@ import {
   WebhookRecorderService,
   type RecordedWebhook,
 } from '../webhooks/webhook-recorder.service';
+import type { AdminAction } from './admin-actions';
 import { parseActivateScenarioBody, parseDriverOverrideBody } from './control.dto';
 import { ControlAuthGuard } from './control.guard';
 import { ControlService, type ControlState } from './control.service';
@@ -36,6 +39,7 @@ export class ControlController {
     private readonly control: ControlService,
     private readonly tail: RequestTailService,
     private readonly webhooks: WebhookRecorderService,
+    @Inject(SIM_CORE_CONFIG) private readonly config: SimCoreConfig,
     @Optional() private readonly docs?: DocsService,
   ) {}
 
@@ -47,6 +51,17 @@ export class ControlController {
   @Get('scenarios')
   scenarios(): { scenarios: ScenarioListing[] } {
     return { scenarios: this.control.listScenarios() };
+  }
+
+  /**
+   * v0.5.0, additive. The sim's declared {@link AdminAction}s, so the SPA can
+   * render buttons for consumer-owned `/__control/*` routes. Empty when none
+   * are declared. Behind the guard (not on `/__admin/brand`) because it names
+   * control routes.
+   */
+  @Get('actions')
+  actions(): { actions: AdminAction[] } {
+    return { actions: this.config.adminActions ?? [] };
   }
 
   /** Additive to the spec table: the admin SPA's request-tail view reads this. */

@@ -45,6 +45,7 @@ export class ScenarioRegistryService {
         id: scenario.id,
         description: scenario.description,
         params: describeSchema(scenario.params),
+        admin: scenario.admin ?? null,
       }))
       .sort((a, b) => a.id.localeCompare(b.id));
   }

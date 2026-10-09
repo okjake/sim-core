@@ -9,6 +9,7 @@ export const latencyScenario: Scenario<{
 }> = {
   id: 'latency',
   description: 'Adds baseMs (± jitterMs) of latency to every matching response.',
+  admin: { title: 'Slow responses', group: 'Generic faults', order: 30, triggers: ['Traffic troubleshooting (latency)'] },
   params: p.object({
     baseMs: p.number({ min: 0, max: 60_000 }).default(750).describedAs('Base delay in ms'),
     jitterMs: p
@@ -36,6 +37,7 @@ export const errorSpikeScenario: Scenario<{
 }> = {
   id: 'error-spike',
   description: 'Fails a fraction of matching requests with the given status code.',
+  admin: { title: 'Error storm', group: 'Generic faults', order: 10, triggers: ['Traffic troubleshooting'] },
   params: p.object({
     rate: p.number({ min: 0, max: 1 }).default(0.25).describedAs('Failure rate, 0..1'),
     status: p.number({ min: 400, max: 599 }).default(500).describedAs('HTTP status'),
@@ -53,6 +55,13 @@ export const errorSpikeScenario: Scenario<{
 export const outageScenario: Scenario<{ status: number; pathPrefix?: string }> = {
   id: 'outage',
   description: 'Hard outage — rejects every matching request with 503.',
+  admin: {
+    title: 'Full outage',
+    group: 'Generic faults',
+    order: 20,
+    // Incident-shaped, but nothing on the platform opens an incident record from it.
+    triggers: ['Traffic troubleshooting'],
+  },
   params: p.object({
     status: p.number({ min: 400, max: 599 }).default(503).describedAs('HTTP status'),
     pathPrefix: p.string().optional().describedAs('Restrict to a path prefix'),
@@ -69,6 +78,7 @@ export const outageScenario: Scenario<{ status: number; pathPrefix?: string }> =
 export const authFailureScenario: Scenario<{ status: number; pathPrefix?: string }> = {
   id: 'auth-failure',
   description: 'Rejects every matching request with 401, as if credentials had expired.',
+  admin: { title: 'Reject all credentials', group: 'Generic faults', order: 40, triggers: ['Traffic troubleshooting (401s)'] },
   params: p.object({
     status: p.number({ min: 400, max: 599 }).default(401).describedAs('HTTP status'),
     pathPrefix: p.string().optional().describedAs('Restrict to a path prefix'),

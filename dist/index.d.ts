@@ -31,7 +31,7 @@ export { WebhookRecorderService, WEBHOOK_BODY_PREVIEW_CHARS, WEBHOOK_RECORDER_CA
 export { httpDate, isNotModified, toHttpSeconds, type ConditionalTarget, } from './http/conditional';
 export { ScenarioRegistryService } from './scenarios/scenario-registry.service';
 export { BUILTIN_SCENARIOS, latencyScenario, errorSpikeScenario, outageScenario, authFailureScenario, } from './scenarios/builtin-scenarios';
-export type { Scenario, ScenarioContext, ScenarioListing, ActiveScenarioState, RevertFn, } from './scenarios/scenario.types';
+export type { Scenario, ScenarioContext, ScenarioListing, ScenarioAdminMeta, ActiveScenarioState, RevertFn, } from './scenarios/scenario.types';
 export { ChaosService } from './chaos/chaos.service';
 export { ChaosInterceptor, CHAOS_EXEMPT_PREFIXES, DOCS_CHAOS_PREFIXES, isChaosExempt, type ChaosExemptionOptions, } from './chaos/chaos.interceptor';
 export type { ChaosControl, ChaosRule, ActiveChaosRule, LatencyPrimitive, ErrorRatePrimitive, MalformedResponsePrimitive, RejectPrimitive, } from './chaos/chaos.types';
@@ -42,6 +42,7 @@ export { ControlController } from './control/control.controller';
 export { ControlAuthGuard } from './control/control.guard';
 export { TTL_MIN_SECONDS, TTL_MAX_SECONDS, parseActivateScenarioBody, parseDriverOverrideBody, type ActivateScenarioBody, type DriverOverrideBody, } from './control/control.dto';
 export type { ControlState, DriverOverrideState } from './control/control.service';
+export { validateAdminActions, type AdminAction, type AdminActionChoice, } from './control/admin-actions';
 export { HealthController, type HealthPayload } from './builtins/health.controller';
 export { OpenApiController, ACTIVE_SPEC_SOURCE, stripControlPaths, type ActiveSpecSource, } from './builtins/openapi.controller';
 export { AdminBrandController, type AdminBrandPayload, } from './builtins/admin-brand.controller';

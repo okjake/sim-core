@@ -111,6 +111,8 @@ export interface DemoConfigOverrides {
    * stay usable offline.
    */
   adminAuth?: Partial<AdminAuthConfig> | boolean;
+  /** v0.5.0 admin-SPA buttons for consumer `/__control/*` routes. */
+  adminActions?: SimCoreConfig['adminActions'];
 }
 
 /** Long enough to satisfy the >= 32 character rule, obviously not a secret. */
@@ -138,6 +140,7 @@ export function createDemoConfig(overrides: DemoConfigOverrides = {}): SimCoreCo
     controlToken: overrides.controlToken ?? DEMO_CONTROL_TOKEN,
     openapi,
     scenarios: [badPayloadsScenario],
+    ...(overrides.adminActions ? { adminActions: overrides.adminActions } : {}),
     admin: overrides.admin ?? true,
     seed: 'demo-seed',
     ...(docsOverrides

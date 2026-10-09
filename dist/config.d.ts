@@ -1,3 +1,4 @@
+import { type AdminAction } from './control/admin-actions';
 import type { AdminAuthConfig } from './admin-auth/admin-auth.types';
 import type { DocsAuthCheck, DocsConfig } from './docs/docs.types';
 import type { DriverConfig } from './driver/driver.types';
@@ -81,6 +82,14 @@ export interface SimCoreConfig {
      * because the platform polls the first three and automation drives the last.
      */
     adminAuth?: AdminAuthConfig;
+    /**
+     * Buttons for this sim's own `/__control/*` routes, rendered on `/admin`
+     * under "Manual controls". Optional and purely presentational: the routes
+     * themselves are registered by the consumer as before, and omitting this
+     * leaves them working exactly as they did (curl-only). See
+     * {@link AdminAction}; every `path` must sit under `/__control/`.
+     */
+    adminActions?: AdminAction[];
 }
 /** Applies defaults and fails fast on an unusable config. */
 export declare function normalizeSimCoreConfig(config: SimCoreConfig): Required<Pick<SimCoreConfig, 'name' | 'brand' | 'openapi' | 'controlToken' | 'version' | 'seed' | 'requestTailSize' | 'admin'>> & SimCoreConfig;

@@ -14,6 +14,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ControlController = void 0;
 const common_1 = require("@nestjs/common");
+const config_1 = require("../config");
 const docs_service_1 = require("../docs/docs.service");
 const request_tail_service_1 = require("../request-tail/request-tail.service");
 const webhook_recorder_service_1 = require("../webhooks/webhook-recorder.service");
@@ -28,11 +29,13 @@ let ControlController = class ControlController {
     control;
     tail;
     webhooks;
+    config;
     docs;
-    constructor(control, tail, webhooks, docs) {
+    constructor(control, tail, webhooks, config, docs) {
         this.control = control;
         this.tail = tail;
         this.webhooks = webhooks;
+        this.config = config;
         this.docs = docs;
     }
     state() {
@@ -40,6 +43,15 @@ let ControlController = class ControlController {
     }
     scenarios() {
         return { scenarios: this.control.listScenarios() };
+    }
+    /**
+     * v0.5.0, additive. The sim's declared {@link AdminAction}s, so the SPA can
+     * render buttons for consumer-owned `/__control/*` routes. Empty when none
+     * are declared. Behind the guard (not on `/__admin/brand`) because it names
+     * control routes.
+     */
+    actions() {
+        return { actions: this.config.adminActions ?? [] };
     }
     /** Additive to the spec table: the admin SPA's request-tail view reads this. */
     requests(limit) {
@@ -100,6 +112,12 @@ __decorate([
     __metadata("design:returntype", Object)
 ], ControlController.prototype, "scenarios", null);
 __decorate([
+    (0, common_1.Get)('actions'),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Object)
+], ControlController.prototype, "actions", null);
+__decorate([
     (0, common_1.Get)('requests'),
     __param(0, (0, common_1.Query)('limit')),
     __metadata("design:type", Function),
@@ -143,9 +161,9 @@ __decorate([
 exports.ControlController = ControlController = __decorate([
     (0, common_1.Controller)('__control'),
     (0, common_1.UseGuards)(control_guard_1.ControlAuthGuard),
-    __param(3, (0, common_1.Optional)()),
+    __param(3, (0, common_1.Inject)(config_1.SIM_CORE_CONFIG)),
+    __param(4, (0, common_1.Optional)()),
     __metadata("design:paramtypes", [control_service_1.ControlService,
         request_tail_service_1.RequestTailService,
-        webhook_recorder_service_1.WebhookRecorderService,
-        docs_service_1.DocsService])
+        webhook_recorder_service_1.WebhookRecorderService, Object, docs_service_1.DocsService])
 ], ControlController);

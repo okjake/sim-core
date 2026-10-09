@@ -182,6 +182,7 @@ export type {
   Scenario,
   ScenarioContext,
   ScenarioListing,
+  ScenarioAdminMeta,
   ActiveScenarioState,
   RevertFn,
 } from './scenarios/scenario.types';
@@ -237,6 +238,11 @@ export {
   type DriverOverrideBody,
 } from './control/control.dto';
 export type { ControlState, DriverOverrideState } from './control/control.service';
+export {
+  validateAdminActions,
+  type AdminAction,
+  type AdminActionChoice,
+} from './control/admin-actions';
 
 // --- built-in routes --------------------------------------------------------
 export { HealthController, type HealthPayload } from './builtins/health.controller';

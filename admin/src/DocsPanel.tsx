@@ -9,6 +9,7 @@ import {
   type SpecVersion,
   type SpecVersionSummary,
 } from './api';
+import { useConfirm } from './confirm';
 
 type Section = 'specs' | 'guides' | 'changelog';
 
@@ -36,6 +37,7 @@ function SpecVersions({
   const [parseError, setParseError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const confirm = useConfirm();
 
   const refresh = useCallback(async () => {
     try {
@@ -176,7 +178,29 @@ function SpecVersions({
                 className="primary"
                 type="button"
                 disabled={busy || selected.active}
-                onClick={() => void run(() => api.docs.publishSpecVersion(token, selected.id))}
+                onClick={() =>
+                  void (async () => {
+                    const ok = await confirm({
+                      title: `Publish ${selected.label}?`,
+                      body: (
+                        <>
+                          <p>
+                            It becomes the live contract at <code>/openapi.json</code> and{' '}
+                            <code>/docs</code>. Partner API’s spec monitor diffs it against the
+                            previous version: a breaking change alerts straight away, an additive
+                            one reaches the daily digest.
+                          </p>
+                          <p>
+                            Published versions are permanent history. To go back, publish another
+                            version or reset docs from <code>content/</code>.
+                          </p>
+                        </>
+                      ),
+                      confirmLabel: 'Publish',
+                    });
+                    if (ok) await run(() => api.docs.publishSpecVersion(token, selected.id));
+                  })()
+                }
               >
                 Publish
               </button>
@@ -185,10 +209,19 @@ function SpecVersions({
                 type="button"
                 disabled={busy || selected.active}
                 onClick={() =>
-                  void run(async () => {
-                    await api.docs.deleteSpecVersion(token, selected.id);
-                    setSelected(null);
-                  })
+                  void (async () => {
+                    const ok = await confirm({
+                      title: `Delete ${selected.label}?`,
+                      body: <p>The spec version is removed from the docs database. This can’t be undone.</p>,
+                      confirmLabel: 'Delete',
+                      tone: 'danger',
+                    });
+                    if (!ok) return;
+                    await run(async () => {
+                      await api.docs.deleteSpecVersion(token, selected.id);
+                      setSelected(null);
+                    });
+                  })()
                 }
               >
                 Delete
@@ -255,6 +288,7 @@ function MarkdownEditor({
   const [preview, setPreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const confirm = useConfirm();
 
   const run = async (fn: () => Promise<unknown>): Promise<void> => {
     setBusy(true);
@@ -395,11 +429,26 @@ function MarkdownEditor({
                 type="button"
                 disabled={busy}
                 onClick={() =>
-                  void run(async () => {
-                    await onDelete(current.key);
-                    setCurrent(null);
-                    setPreview(null);
-                  })
+                  void (async () => {
+                    const ok = await confirm({
+                      title: `Delete ${current.title || current.key}?`,
+                      body: (
+                        <p>
+                          This {kind === 'guide' ? 'guide' : 'changelog entry'} is removed from the
+                          docs database{current.published ? ' and the public docs' : ''}. This can’t
+                          be undone.
+                        </p>
+                      ),
+                      confirmLabel: 'Delete',
+                      tone: 'danger',
+                    });
+                    if (!ok) return;
+                    await run(async () => {
+                      await onDelete(current.key);
+                      setCurrent(null);
+                      setPreview(null);
+                    });
+                  })()
                 }
               >
                 Delete
@@ -431,6 +480,7 @@ export default function DocsPanel({ token }: { token: string }): ReactElement {
   const [changelog, setChangelog] = useState<ChangelogEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const confirm = useConfirm();
 
   const refresh = useCallback(async () => {
     try {
@@ -453,14 +503,18 @@ export default function DocsPanel({ token }: { token: string }): ReactElement {
   }, [refresh]);
 
   const resetDocs = async (): Promise<void> => {
-    if (
-      !window.confirm(
-        'Wipe every spec version, guide and changelog entry and reseed from the ' +
-          "service's content/ directory? Unsaved editor work is lost.",
-      )
-    ) {
-      return;
-    }
+    const ok = await confirm({
+      title: 'Reset docs from content/?',
+      body: (
+        <p>
+          Wipes every spec version, guide and changelog entry and reseeds from this service’s{' '}
+          <code>content/</code> directory. Unsaved editor work is lost.
+        </p>
+      ),
+      confirmLabel: 'Reset docs',
+      tone: 'danger',
+    });
+    if (!ok) return;
     try {
       const result = await api.docs.resetDocs(token);
       setNotice(
@@ -474,15 +528,15 @@ export default function DocsPanel({ token }: { token: string }): ReactElement {
   };
 
   return (
-    <div className="panel wide">
+    <div className="section docs">
       <div className="row between">
         <h2>Docs</h2>
         <div className="row tight">
           <a className="ghost as-button" href="/docs" target="_blank" rel="noreferrer">
             View public docs
           </a>
-          <button className="ghost" type="button" onClick={() => void resetDocs()}>
-            Reset from content/
+          <button className="danger-ghost" type="button" onClick={() => void resetDocs()}>
+            Reset docs…
           </button>
         </div>
       </div>
